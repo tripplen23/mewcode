@@ -91,11 +91,37 @@ pub struct FsStore {
     write_lock: Mutex<()>,
 }
 
+/// Remove orphaned `.tmp` files older than 1 hour from a directory.
+/// These are left behind if the process crashes between `File::create(tmp)`
+/// and `rename(tmp, target)` in `write_meta_atomic`.
+fn cleanup_stale_temps(dir: &Path) -> Result<(), StoreError> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Ok(()); // dir doesn't exist yet, nothing to clean
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|e| e == "tmp") {
+            // Only remove files older than 1 hour to avoid races with
+            // running write operations.
+            let age = std::fs::metadata(&path)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.elapsed().ok());
+
+            if age.is_some_and(|d| d > std::time::Duration::from_secs(3600)) {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+    }
+    Ok(())
+}
+
 impl FsStore {
-    /// Build a store rooted at `data_dir`, ensuring the `sessions/` subdir
-    /// exists.
+    /// Build a store rooted at `data_dir`. The caller is responsible for
+    /// ensuring the `sessions/` subdirectory exists (see `resolve_data_dir`).
     pub fn new(data_dir: PathBuf) -> Result<Self, StoreError> {
-        std::fs::create_dir_all(data_dir.join(SESSIONS_SUBDIR))?;
+        // cleanup: remove orphaned .tmp files from crashed processes
+        let _ = cleanup_stale_temps(&data_dir.join(SESSIONS_SUBDIR));
         Ok(Self {
             data_dir,
             write_lock: Mutex::new(()),
@@ -152,22 +178,35 @@ fn read_meta(meta_path: &Path) -> Result<MetaJson, StoreError> {
 
 /// Read and replay `messages.jsonl` in append order.
 ///
-/// A missing file is treated as an empty history. A line that cannot be parsed
-/// surfaces as [`StoreError::Invalid`].
+/// A missing file is treated as an empty history. An unparseable trailing
+/// line is silently skipped (it may be a torn write from a concurrent
+/// append). Lines before the last that cannot be parsed surface as
+/// [`StoreError::Invalid`] — genuine corruption.
 fn read_messages(messages_path: &Path) -> Result<Vec<Message>, StoreError> {
     let raw = match std::fs::read_to_string(messages_path) {
         Ok(raw) => raw,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(StoreError::Io(e)),
     };
-    let mut messages = Vec::new();
-    for line in raw.lines() {
-        if line.trim().is_empty() {
+    let lines: Vec<&str> = raw.lines().collect();
+    let mut messages = Vec::with_capacity(lines.len());
+    for (i, line) in lines.iter().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
             continue;
         }
-        let msg: Message = serde_json::from_str(line)
-            .map_err(|e| StoreError::Invalid(format!("corrupt {MESSAGES_FILE}: {e}")))?;
-        messages.push(msg);
+        match serde_json::from_str::<Message>(line) {
+            Ok(msg) => messages.push(msg),
+            Err(e) if i == lines.len() - 1 => {
+                // ponytail: last line may be a torn concurrent write; skip it.
+                tracing::warn!("ignoring unparseable trailing line in {MESSAGES_FILE}: {e}");
+            }
+            Err(e) => {
+                return Err(StoreError::Invalid(
+                    format!("corrupt {MESSAGES_FILE} at line {}: {e}", i + 1),
+                ));
+            }
+        }
     }
     Ok(messages)
 }

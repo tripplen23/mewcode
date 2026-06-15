@@ -55,7 +55,8 @@ pub async fn create(
 }
 
 /// Delete a session by id. Returns `204 No Content` on success, or `404` when
-/// the session does not exist (the store surfaces [`StoreError::NotFound`]).
+/// the session does not exist (the store surfaces
+/// [`crate::store::StoreError::NotFound`]).
 pub async fn delete(
     State(state): State<AppState>,
     Path(id): Path<uuid::Uuid>,
