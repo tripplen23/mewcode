@@ -1,97 +1,119 @@
-//! Session CRUD. Backed by the in-memory store until the filesystem
-//! `SessionStore` wiring lands.
+//! Session CRUD. Delegates to the active [`SessionStore`] backend held in
+//! [`AppState`].
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
-use chrono::{DateTime, Utc};
-use mewcode_protocol::{Message, Mode, ModelId};
-use serde::{Deserialize, Serialize};
+use mewcode_protocol::{Mode, ModelId};
+use serde::Deserialize;
 
-use crate::AppState;
+use crate::store::{NewSession, Session, SessionSummary};
 use crate::AppError;
+use crate::AppState;
 
-/// In-memory session store.
-#[derive(Debug, Default)]
-pub struct MemoryStore {
-    /// All sessions known to the server.
-    pub sessions: Vec<Session>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Session {
-    pub id: uuid::Uuid,
-    pub title: String,
-    pub model: ModelId,
-    pub mode: Mode,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub messages: Vec<Message>,
-}
-
-#[derive(Debug, Deserialize)]
+/// Request body for `POST /sessions`.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateSessionRequest {
+    /// Human-readable title (required, non-empty after trimming).
     pub title: String,
+    /// Model to use; defaults when omitted.
     pub model: Option<ModelId>,
+    /// Interaction mode; defaults when omitted.
     pub mode: Option<Mode>,
 }
 
-#[derive(Debug, Serialize)]
-pub struct SessionSummary {
-    pub id: uuid::Uuid,
-    pub title: String,
-    pub model: ModelId,
-    pub mode: Mode,
-    pub created_at: DateTime<Utc>,
+/// `GET /sessions` — list every session as a summary (no message history),
+/// newest-first.
+#[utoipa::path(
+    get,
+    path = "/sessions",
+    tag = "sessions",
+    responses(
+        (status = 200, description = "Session summaries (newest first)", body = [SessionSummary]),
+        (status = 500, description = "Internal error", body = crate::openapi::ErrorResponse),
+    ),
+)]
+pub async fn list(State(state): State<AppState>) -> Result<Json<Vec<SessionSummary>>, AppError> {
+    let summaries = state.store.list_sessions().await?;
+    Ok(Json(summaries))
 }
 
-pub async fn list(State(state): State<AppState>) -> Json<Vec<SessionSummary>> {
-    let guard = state.store.read().await;
-    let out = guard
-        .sessions
-        .iter()
-        .map(|s| SessionSummary {
-            id: s.id,
-            title: s.title.clone(),
-            model: s.model,
-            mode: s.mode,
-            created_at: s.created_at,
-        })
-        .collect();
-    Json(out)
-}
-
+/// `GET /sessions/{id}` — fetch one session, hydrated with its full message
+/// history.
+#[utoipa::path(
+    get,
+    path = "/sessions/{id}",
+    tag = "sessions",
+    params(
+        ("id" = uuid::Uuid, Path, description = "Session id"),
+    ),
+    responses(
+        (status = 200, description = "Session with message history", body = Session),
+        (status = 404, description = "Session not found", body = crate::openapi::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::openapi::ErrorResponse),
+    ),
+)]
 pub async fn get_one(
     State(state): State<AppState>,
     Path(id): Path<uuid::Uuid>,
 ) -> Result<Json<Session>, AppError> {
-    let guard = state.store.read().await;
-    let session = guard
-        .sessions
-        .iter()
-        .find(|s| s.id == id)
-        .cloned()
-        .ok_or(AppError::NotFound)?;
+    let session = state.store.get_session(id).await?;
     Ok(Json(session))
 }
 
+/// `POST /sessions` — create a session. Title is required and trimmed;
+/// empty/whitespace titles are rejected with `400`.
+#[utoipa::path(
+    post,
+    path = "/sessions",
+    tag = "sessions",
+    request_body = CreateSessionRequest,
+    responses(
+        (status = 201, description = "Session created", body = Session),
+        (status = 400, description = "Empty or whitespace title", body = crate::openapi::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::openapi::ErrorResponse),
+    ),
+)]
 pub async fn create(
     State(state): State<AppState>,
     Json(body): Json<CreateSessionRequest>,
 ) -> Result<(StatusCode, Json<Session>), AppError> {
-    if body.title.trim().is_empty() {
+    let title = body.title.trim();
+    if title.is_empty() {
         return Err(AppError::BadRequest("title is required".into()));
     }
-    let now = Utc::now();
-    let session = Session {
-        id: uuid::Uuid::new_v4(),
-        title: body.title,
-        model: body.model.unwrap_or_default(),
-        mode: body.mode.unwrap_or_default(),
-        created_at: now,
-        updated_at: now,
-        messages: Vec::new(),
-    };
-    state.store.write().await.sessions.push(session.clone());
+    let session = state
+        .store
+        .create_session(NewSession {
+            title: title.to_owned(),
+            model: body.model.unwrap_or_default(),
+            mode: body.mode.unwrap_or_default(),
+        })
+        .await?;
     Ok((StatusCode::CREATED, Json(session)))
+}
+
+/// `DELETE /sessions/{id}` — delete a session and its message history.
+/// Returns:
+/// `204 No Content` on success, 
+/// `404` when the session does not exist.
+#[utoipa::path(
+    delete,
+    path = "/sessions/{id}",
+    tag = "sessions",
+    params(
+        ("id" = uuid::Uuid, Path, description = "Session id"),
+    ),
+    responses(
+        (status = 204, description = "Session deleted"),
+        (status = 404, description = "Session not found", body = crate::openapi::ErrorResponse),
+        (status = 500, description = "Internal error", body = crate::openapi::ErrorResponse),
+    ),
+)]
+pub async fn delete(
+    State(state): State<AppState>,
+    Path(id): Path<uuid::Uuid>,
+) -> Result<StatusCode, AppError> {
+    state.store.delete_session(id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }

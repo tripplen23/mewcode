@@ -4,6 +4,7 @@
 
 pub mod config;
 pub mod error;
+pub mod openapi;
 pub mod routes;
 pub mod sse;
 pub mod store;
@@ -15,29 +16,30 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::Router;
-use mewcode_protocol::routes::{CHAT, HEALTH, MODELS, SESSIONS, SESSION_BY_ID};
-use tokio::sync::RwLock;
+use mewcode_protocol::routes::{CHAT, HEALTH, MODELS, SESSIONS, SESSION_BY_ID, STORAGE_STATUS};
 use tower_http::trace::TraceLayer;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
-use crate::routes::sessions::MemoryStore;
+use crate::openapi::ApiDoc;
+use crate::store::SessionStore;
 
 /// Shared application state.
+///
+/// The session backend is chosen at startup and held behind a shared
+/// `Arc<dyn SessionStore>`, so cloning the state is just an `Arc` clone.
 #[derive(Clone)]
 pub struct AppState {
     /// Server config.
     pub config: ServerConfig,
-    /// In-memory session store. Replaced by the filesystem-backed
-    /// `SessionStore` when the Phase 4 wiring lands.
-    pub store: Arc<RwLock<MemoryStore>>,
+    /// Session store backend (filesystem in production, in-memory in tests).
+    pub store: Arc<dyn SessionStore>,
 }
 
 impl AppState {
-    /// Construct a new state with an empty in-memory store.
-    pub fn new(config: ServerConfig) -> Self {
-        Self {
-            config,
-            store: Arc::new(RwLock::new(MemoryStore::default())),
-        }
+    /// Construct a new state over the given session store.
+    pub fn new(config: ServerConfig, store: Arc<dyn SessionStore>) -> Self {
+        Self { config, store }
     }
 }
 
@@ -50,10 +52,15 @@ pub fn build_app(state: AppState) -> Router {
             SESSIONS,
             axum::routing::get(routes::sessions::list).post(routes::sessions::create),
         )
-        .route(SESSION_BY_ID, axum::routing::get(routes::sessions::get_one))
+        .route(
+            SESSION_BY_ID,
+            axum::routing::get(routes::sessions::get_one).delete(routes::sessions::delete),
+        )
         .route(CHAT, axum::routing::post(routes::chat::chat_stream))
+        .route(STORAGE_STATUS, axum::routing::get(routes::storage::status))
         .with_state(state)
         .layer(TraceLayer::new_for_http())
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
 }
 
 /// Run the server, blocking the current task.

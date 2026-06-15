@@ -39,6 +39,10 @@ uuid = { workspace = true }
 clap = { workspace = true }
 figment = { workspace = true }
 dirs = { workspace = true }
+dotenvy = { workspace = true }
+
+utoipa = { workspace = true }
+utoipa-swagger-ui = { workspace = true }
 
 reqwest = { workspace = true }
 eventsource-stream = { workspace = true }
@@ -50,3 +54,4 @@ rig-core = { workspace = true }
 tower = { workspace = true, features = ["util"] }
 http-body-util = "0.1"
 tempfile = { workspace = true }
+proptest = { workspace = true }
