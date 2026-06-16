@@ -176,7 +176,8 @@ fn on_new_session_key(screen: &mut Screen, toast: &mut Option<Toast>, key: KeyEv
             match n.field {
                 NewSessionField::Model => n.model_idx = n.model_idx.saturating_sub(1),
                 NewSessionField::Mode => n.mode = toggle_mode(n.mode),
-                NewSessionField::Title => {}
+                // Pass Left through so the TextArea can move the cursor.
+                NewSessionField::Title => { n.title.input(key_to_input(key)); }
             }
             Cmd::None
         }
@@ -186,7 +187,8 @@ fn on_new_session_key(screen: &mut Screen, toast: &mut Option<Toast>, key: KeyEv
                     n.model_idx = (n.model_idx + 1).min(ModelId::ALL.len().saturating_sub(1))
                 }
                 NewSessionField::Mode => n.mode = toggle_mode(n.mode),
-                NewSessionField::Title => {}
+                // Pass Right through so the TextArea can move the cursor.
+                NewSessionField::Title => { n.title.input(key_to_input(key)); }
             }
             Cmd::None
         }
@@ -201,14 +203,19 @@ fn on_new_session_key(screen: &mut Screen, toast: &mut Option<Toast>, key: KeyEv
 
 /// Session screen: input editing, submit, slash commands, and back-navigation.
 fn on_session_key(screen: &mut Screen, toast: &mut Option<Toast>, key: KeyEvent) -> Cmd {
-    if key.code == KeyCode::Esc {
-        *screen = Screen::Home(HomeState::loading());
-        return Cmd::LoadSessions;
-    }
-
     let Screen::Session(s) = screen else {
         return Cmd::None;
     };
+
+    if key.code == KeyCode::Esc {
+        // Close an open overlay first; only leave the session on a second Esc.
+        if s.overlay != Overlay::None {
+            s.overlay = Overlay::None;
+            return Cmd::None;
+        }
+        *screen = Screen::Home(HomeState::loading());
+        return Cmd::LoadSessions;
+    }
 
     match key.code {
         KeyCode::Enter => on_session_submit(s, toast),

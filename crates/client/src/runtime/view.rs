@@ -27,6 +27,8 @@ use syntect::util::LinesWithEndings;
 use mewcode_protocol::tool::ToolName;
 use mewcode_protocol::{MessagePart, Role};
 
+use unicode_width::UnicodeWidthStr;
+
 use super::app::{
     App, HomeState, NewSessionField, NewSessionState, Overlay, Screen, SessionState, Toast,
     ToastKind,
@@ -514,7 +516,7 @@ fn render_toast(frame: &mut Frame, area: Rect, toast: &Toast) {
         Style::default().fg(base).add_modifier(Modifier::BOLD)
     };
 
-    let width = (toast.text.len() as u16 + 4).min(area.width);
+    let width = (UnicodeWidthStr::width(toast.text.as_str()) as u16 + 4).min(area.width);
     let rect = Rect {
         x: area.x + area.width.saturating_sub(width),
         y: area.y,
