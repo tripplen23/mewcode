@@ -29,13 +29,11 @@ mewcode tui      # ratatui client
 ## Getting started
 
 Prerequisites:
-- Rust stable (1.85+), edition 2024
+- Rust stable (1.96+), edition 2026
 
 ```bash
 cp .env.example .env
 # fill in OPENCODE_GO_API_KEY
-
-cargo run -- tui
 ```
 
 ## Server API
@@ -47,6 +45,12 @@ cargo run -p mewcode-server
 ```
 
 - **Swagger UI** — http://127.0.0.1:3737/swagger-ui/
+
+## TUI
+
+```bash
+cargo run -- tui
+```
 
 ## License
 
