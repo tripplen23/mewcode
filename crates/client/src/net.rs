@@ -2,8 +2,8 @@
 
 use eventsource_stream::Eventsource;
 use futures::{Stream, StreamExt};
-use mewcode_protocol::routes::{CHAT, HEALTH, MODELS, SESSIONS, SESSION_BY_ID};
 use mewcode_protocol::event::ChatRequest;
+use mewcode_protocol::routes::{CHAT, HEALTH, MODELS, SESSION_BY_ID, SESSIONS};
 use mewcode_protocol::{Message, Mode, ModelId, ModelKind, StreamEvent};
 use serde::{Deserialize, Serialize};
 

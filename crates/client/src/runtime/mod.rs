@@ -1,22 +1,25 @@
 //! TUI runtime: the Elm-style model, messages, and the event loop.
 //!
-//! The model lives in [`app`], the pure state transition in [`update`], and the
-//! rendering in [`view`]. This module owns the imperative shell: a RAII
-//! terminal guard, the crossterm-backed event loop, the input/ticker tasks, the
-//! [`Cmd`] dispatcher, and the SSE consumer.
+//! The model lives in [`model`], the pure state transition in [`mod@update`],
+//! and the rendering in [`view`]. This module owns the imperative shell: a
+//! RAII terminal guard, the crossterm-backed event loop, the input/ticker
+//! tasks, the [`Cmd`] dispatcher, and the SSE consumer.
 //!
 //! > Idiom: RAII terminal guard. Raw mode and the alternate screen are entered
-//! > in [`TerminalGuard::new`]; its `Drop` restores cooked mode and leaves the
+//! > in `TerminalGuard::new`; its `Drop` restores cooked mode and leaves the
 //! > alternate screen. So a normal exit, an error `?`-return, or an unwinding
 //! > panic all hand the user back a working terminal — there is no cleanup path
 //! > to forget. `unwrap` stays off the production path: `anyhow` sits at this
 //! > boundary, `thiserror`/`NetError` at the `net` boundary.
 
-pub mod app;
+pub mod model;
 pub mod update;
 pub mod view;
 
-pub use app::App;
+pub use model::{
+    App, Cmd, HomeState, Msg, NewSessionField, NewSessionState, Overlay, Screen, SessionState,
+    StreamMsg,
+};
 pub use update::update;
 
 use std::io::{self, Stdout};
@@ -26,16 +29,15 @@ use anyhow::{Context, Result};
 use crossterm::event::{self, Event, KeyEventKind};
 use crossterm::execute;
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
 use tokio::sync::mpsc;
 
-use mewcode_protocol::event::ChatRequest;
 use mewcode_protocol::StreamEvent;
+use mewcode_protocol::event::ChatRequest;
 
-use self::app::{Cmd, Msg, StreamMsg};
 use crate::config::ClientConfig;
 use crate::net::ApiClient;
 
@@ -89,9 +91,9 @@ impl Drop for TerminalGuard {
 /// until the user quits.
 ///
 /// The loop renders the current model, awaits the next [`Msg`], applies the
-/// pure [`update`], and dispatches the resulting [`Cmd`] as async side effects
-/// whose results return as more `Msg`s. The terminal is restored by the guard's
-/// `Drop` on every exit path.
+/// pure [`update()`], and dispatches the resulting [`Cmd`] as async side
+/// effects whose results return as more `Msg`s. The terminal is restored by
+/// the guard's `Drop` on every exit path.
 pub async fn run(config: ClientConfig) -> Result<()> {
     let mut guard = TerminalGuard::new()?;
     let api = ApiClient::new(config.api_url.clone());
@@ -114,7 +116,7 @@ pub async fn run(config: ClientConfig) -> Result<()> {
         // All senders dropping closes the channel; treat that as a clean exit.
         let Some(msg) = rx.recv().await else { break };
 
-        let cmd = update(&mut app, msg); // pure + synchronous
+        let cmd = update(&mut app, msg);
         if app.should_quit {
             break;
         }
@@ -129,24 +131,26 @@ pub async fn run(config: ClientConfig) -> Result<()> {
 /// each key press as a [`Msg::Key`]. Key *release* events are dropped so an
 /// action never fires twice on platforms that report both.
 fn spawn_input_reader(tx: mpsc::Sender<Msg>) {
-    tokio::task::spawn_blocking(move || loop {
-        match event::poll(INPUT_POLL_INTERVAL) {
-            Ok(true) => match event::read() {
-                Ok(Event::Key(key)) if key.kind != KeyEventKind::Release => {
-                    if tx.blocking_send(Msg::Key(key)).is_err() {
-                        break; // loop gone
+    tokio::task::spawn_blocking(move || {
+        loop {
+            match event::poll(INPUT_POLL_INTERVAL) {
+                Ok(true) => match event::read() {
+                    Ok(Event::Key(key)) if key.kind != KeyEventKind::Release => {
+                        if tx.blocking_send(Msg::Key(key)).is_err() {
+                            break; // loop gone
+                        }
+                    }
+                    Ok(_) => {} // resize, mouse, focus, paste, key-release: ignored
+                    Err(_) => break,
+                },
+                // Timed out with no event: stop if the loop has shut down.
+                Ok(false) => {
+                    if tx.is_closed() {
+                        break;
                     }
                 }
-                Ok(_) => {} // resize, mouse, focus, paste, key-release: ignored
                 Err(_) => break,
-            },
-            // Timed out with no event: stop if the loop has shut down.
-            Ok(false) => {
-                if tx.is_closed() {
-                    break;
-                }
             }
-            Err(_) => break,
         }
     });
 }

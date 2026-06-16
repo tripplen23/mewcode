@@ -8,12 +8,12 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use uuid::Uuid;
 
 use mewcode_client::net::{Session, SessionSummary};
-use mewcode_client::runtime::app::{
+use mewcode_client::runtime::model::{
     App, Cmd, HomeState, Msg, NewSessionField, NewSessionState, Overlay, Screen, SessionState,
     StreamMsg,
 };
 use mewcode_client::runtime::update;
-use mewcode_protocol::{Mode, MessagePart, ModelId, Role};
+use mewcode_protocol::{MessagePart, Mode, ModelId, Role};
 
 // --- test fixtures -------------------------------------------------------
 
@@ -210,7 +210,10 @@ fn new_session_valid_title_submits_trimmed() {
 #[test]
 fn new_session_esc_returns_to_loading_home() {
     let mut app = new_session_app();
-    assert!(matches!(update(&mut app, key(KeyCode::Esc)), Cmd::LoadSessions));
+    assert!(matches!(
+        update(&mut app, key(KeyCode::Esc)),
+        Cmd::LoadSessions
+    ));
     assert!(home(&app).loading);
 }
 

@@ -13,7 +13,7 @@ use proptest::prelude::*;
 use uuid::Uuid;
 
 use mewcode_client::net::Session;
-use mewcode_client::runtime::app::{App, Msg, Screen, SessionState, StreamMsg};
+use mewcode_client::runtime::model::{App, Msg, Screen, SessionState, StreamMsg};
 use mewcode_client::runtime::update;
 use mewcode_protocol::{Mode, ModelId, Role};
 
@@ -153,9 +153,15 @@ fn finish_commits_buffered_text() {
     let mut app = session_app();
     start_turn(&mut app);
     update(&mut app, Msg::Stream(StreamMsg::Started(Uuid::new_v4())));
-    update(&mut app, Msg::Stream(StreamMsg::Delta("hello ".to_string())));
+    update(
+        &mut app,
+        Msg::Stream(StreamMsg::Delta("hello ".to_string())),
+    );
     update(&mut app, Msg::Stream(StreamMsg::Delta("world".to_string())));
-    update(&mut app, Msg::Stream(StreamMsg::Finished { duration_ms: 7 }));
+    update(
+        &mut app,
+        Msg::Stream(StreamMsg::Finished { duration_ms: 7 }),
+    );
 
     let s = session_state(&app);
     assert!(s.streaming.is_none());

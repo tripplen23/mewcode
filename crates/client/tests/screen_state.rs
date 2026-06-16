@@ -5,8 +5,8 @@
 //! exercised here by constructing every variant and asserting it holds the
 //! data it was given.
 
-use mewcode_client::runtime::app::{HomeState, NewSessionState, Screen, SessionState};
 use mewcode_client::net::Session;
+use mewcode_client::runtime::model::{HomeState, NewSessionState, Screen, SessionState};
 use mewcode_protocol::{Mode, ModelId};
 
 #[test]

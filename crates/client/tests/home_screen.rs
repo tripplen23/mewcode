@@ -5,10 +5,10 @@
 //! empty-list affordance ("No sessions yet. / Press 'n' to start a new one.")
 //! against accidental regressions.
 
-use ratatui::backend::TestBackend;
 use ratatui::Terminal;
+use ratatui::backend::TestBackend;
 
-use mewcode_client::runtime::app::{App, HomeState, Screen};
+use mewcode_client::runtime::model::{App, HomeState, Screen};
 use mewcode_client::runtime::view::render;
 
 #[test]
