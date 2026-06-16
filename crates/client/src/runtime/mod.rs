@@ -57,9 +57,20 @@ impl TerminalGuard {
     fn new() -> Result<Self> {
         enable_raw_mode().context("enabling raw mode")?;
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen).context("entering alternate screen")?;
-        let terminal =
-            Terminal::new(CrosstermBackend::new(stdout)).context("initialising terminal")?;
+        if let Err(e) = execute!(stdout, EnterAlternateScreen) {
+            let _ = disable_raw_mode();
+            return Err(e).context("entering alternate screen");
+        }
+        let terminal = match Terminal::new(CrosstermBackend::new(stdout)) {
+            Ok(t) => t,
+            Err(e) => {
+                // Clean up before propagating: raw mode and alternate screen
+                // are both active at this point.
+                let _ = disable_raw_mode();
+                let _ = execute!(io::stdout(), LeaveAlternateScreen);
+                return Err(e).context("initialising terminal");
+            }
+        };
         Ok(Self { terminal })
     }
 }

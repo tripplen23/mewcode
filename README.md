@@ -29,7 +29,7 @@ mewcode tui      # ratatui client
 ## Getting started
 
 Prerequisites:
-- Rust stable (1.96+), edition 2026
+- Rust stable (1.85+), edition 2024
 
 ```bash
 cp .env.example .env
@@ -49,7 +49,7 @@ cargo run -p mewcode-server
 ## TUI
 
 ```bash
-cargo run -- tui
+cargo run -p mewcode-client -- tui
 ```
 
 ## License
