@@ -26,11 +26,39 @@ pub(super) fn on_session_key(screen: &mut Screen, toast: &mut Option<Toast>, key
 
     match key.code {
         KeyCode::Enter => on_session_submit(s, toast),
+        // Transcript scrollback. Up/PageUp release auto-follow; scrolling back
+        // to the bottom re-engages it. `max_scroll`/`viewport` come from the
+        // last rendered frame (see `view::render_session`).
+        KeyCode::Up => {
+            scroll_by(s, -1);
+            Cmd::None
+        }
+        KeyCode::Down => {
+            scroll_by(s, 1);
+            Cmd::None
+        }
+        KeyCode::PageUp => {
+            scroll_by(s, -(s.viewport.max(1) as i32));
+            Cmd::None
+        }
+        KeyCode::PageDown => {
+            scroll_by(s, s.viewport.max(1) as i32);
+            Cmd::None
+        }
         _ => {
             s.input.input(key_to_input(key));
             Cmd::None
         }
     }
+}
+
+/// Move the transcript scroll offset by `delta` wrapped lines, clamping into
+/// `[0, max_scroll]`. Scrolling up releases auto-follow; reaching the bottom
+/// re-engages it so new replies keep scrolling into view.
+fn scroll_by(s: &mut SessionState, delta: i32) {
+    let next = (s.scroll as i32 + delta).clamp(0, s.max_scroll as i32) as u16;
+    s.scroll = next;
+    s.follow = next >= s.max_scroll;
 }
 
 /// Handle `Enter` in the Session input bar: slash command, send, or no-op.
@@ -65,6 +93,8 @@ pub(super) fn on_session_submit(s: &mut SessionState, toast: &mut Option<Toast>)
         text: trimmed.to_string(),
     }]);
     s.session.messages.push(user_msg);
+    // Snap back to the latest line so the user watches the reply stream in.
+    s.follow = true;
     // `Uuid::nil()` here is intentional: the real id arrives with the SSE
     // `Started` event; we need a placeholder so the `StreamingState` is Some.
     s.streaming = Some(StreamingState::new(Uuid::nil()));

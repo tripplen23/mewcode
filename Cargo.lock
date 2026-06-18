@@ -1942,6 +1942,7 @@ dependencies = [
  "http",
  "ignore",
  "mewcode-protocol",
+ "proptest",
  "reqwest 0.12.28",
  "rig-core",
  "serde",

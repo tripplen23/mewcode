@@ -33,7 +33,6 @@ Prerequisites:
 
 ```bash
 cp .env.example .env
-# fill in OPENCODE_GO_API_KEY
 ```
 
 ## Server API

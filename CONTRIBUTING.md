@@ -62,6 +62,12 @@ When *what* and *why* coincide, prefer the code; add a comment only when the com
 
 When in doubt, leave it out. Code is read more often than it's written; lean toward less prose.
 
+**Docstring vs inline — the default for a function, struct, enum, or `impl` block is a `///` docstring placed *above* the definition, not an inline `//` comment inside the body.** The docstring gets picked up by `cargo doc`, IDE tooltips, and `rust-analyzer` hovers; the inline comment doesn't. Section-divider comments (`// --- transcript ---`) and labels that restate the next line of code are also discouraged — the code is the section header.
+
+### Third-party documentation references
+
+When a docstring names a crate we depend on, link the specific item on docs.rs so the reader can jump to the upstream API in one click — `[`CompletionModel`](https://docs.rs/rig-core/latest/rig_core/completion/trait.CompletionModel.html)`, not a bare `CompletionModel`. The form is the rustdoc markdown link; the URL is the canonical `https://docs.rs/<crate>/latest/<crate>/…` for the crate root or the per-item anchor (`/struct.Foo.html`, `/trait.Bar.html`, `/enum.Baz.html`, `/fn.qux.html`) when one item is the subject.
+
 ### Tests
 
 **All tests live in external `tests/*.rs` files — never as `#[cfg(test)] mod tests` blocks inside source files.** Source files are 100% production code; reading `crates/<crate>/src/<file>.rs` from top to bottom should show you only the API, never the tests that exercise it.

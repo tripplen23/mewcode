@@ -10,6 +10,8 @@ pub enum Cmd {
     None,
     /// Fetch the session list.
     LoadSessions,
+    /// Fetch the model registry.
+    LoadModels,
     /// Create a new session.
     CreateSession(CreateSessionRequest),
     /// Open/hydrate a session by id.

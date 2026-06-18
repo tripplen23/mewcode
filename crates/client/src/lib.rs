@@ -1,4 +1,4 @@
-//! mewcode terminal UI (ratatui).
+//! mewcode terminal UI ([ratatui](https://docs.rs/ratatui/latest/ratatui/)).
 
 #![forbid(unsafe_code)]
 

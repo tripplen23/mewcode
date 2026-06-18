@@ -20,8 +20,8 @@ async fn main() -> anyhow::Result<()> {
         .parse()
         .expect("MEWCODE_HOST/MEWCODE_PORT must form a valid SocketAddr");
 
-    // Resolve the per-user data dir and open the filesystem-backed store.
-    // A create/write failure here aborts startup (no in-memory fallback).
+    // A create/write failure here aborts startup; we deliberately do not fall
+    // back to an in-memory store.
     let data_dir = resolve_data_dir().context("failed to resolve mewcode data directory")?;
     let store = Arc::new(
         FsStore::new(data_dir.clone())
@@ -29,7 +29,32 @@ async fn main() -> anyhow::Result<()> {
     );
     tracing::info!(data_dir = %data_dir.display(), "session store ready");
 
-    let state = AppState::new(config.clone(), store);
+    let tracer = mewcode_engine::LangfuseTracer::from_env().map(Arc::new);
+    match &tracer {
+        Some(t) => {
+            // Validate the keys/host against Langfuse without blocking startup.
+            // Logs the project on success, or the reason traces won't be recorded.
+            let t = t.clone();
+            tokio::spawn(async move {
+                match tokio::time::timeout(std::time::Duration::from_secs(10), t.health_check())
+                    .await
+                {
+                    Ok(Ok(project)) => {
+                        tracing::info!(project = %project, "Langfuse tracing enabled")
+                    }
+                    Ok(Err(e)) => tracing::warn!(
+                        error = %e,
+                        "Langfuse keys are set but the self-check failed; traces will not be recorded"
+                    ),
+                    Err(_) => tracing::warn!("Langfuse self-check timed out after 10s"),
+                }
+            });
+        }
+        None => tracing::info!(
+            "Langfuse tracing disabled (set LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY to enable)"
+        ),
+    }
+    let state = AppState::new(config.clone(), store).with_tracer(tracer);
 
     let listener = TcpListener::bind(addr).await?;
     tracing::info!(%addr, "mewcode server listening");

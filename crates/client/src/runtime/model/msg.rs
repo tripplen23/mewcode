@@ -2,7 +2,7 @@ use uuid::Uuid;
 
 use crossterm::event::KeyEvent;
 
-use crate::net::{Session, SessionSummary};
+use crate::net::{ModelEntry, Session, SessionSummary};
 
 /// Messages that drive the [`super::App`] through `update`.
 #[derive(Debug)]
@@ -13,12 +13,27 @@ pub enum Msg {
     Tick,
     /// The session list finished loading.
     SessionsLoaded(Result<Vec<SessionSummary>, String>),
+    /// The model registry finished loading.
+    ModelsLoaded(Result<Vec<ModelEntry>, String>),
     /// A new session finished being created.
-    SessionCreated(Result<Session, String>),
+    SessionCreated(Result<Session, CreateError>),
     /// A session finished being opened/hydrated.
     SessionOpened(Result<Session, String>),
     /// A streaming event arrived.
     Stream(StreamMsg),
+}
+
+/// Why a `POST /sessions` failed.
+///
+/// Distinguishes the empty-title client error (keep focus + hint) from every
+/// other failure (persistent error, retain input) so `update` can branch
+/// without re-deriving HTTP semantics.
+#[derive(Debug)]
+pub enum CreateError {
+    /// The server rejected the request because the title was empty.
+    EmptyTitle(String),
+    /// Any other failure (transport, decode, non-4xx status).
+    Other(String),
 }
 
 /// Streaming sub-messages, decoded from server SSE events.

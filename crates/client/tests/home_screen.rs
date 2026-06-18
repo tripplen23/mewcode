@@ -22,7 +22,7 @@ fn empty_home() {
     });
 
     let mut terminal = Terminal::new(TestBackend::new(60, 12)).unwrap();
-    terminal.draw(|frame| render(frame, &app)).unwrap();
+    terminal.draw(|frame| render(frame, &mut app)).unwrap();
 
     insta::assert_snapshot!(terminal.backend().to_string());
 }
