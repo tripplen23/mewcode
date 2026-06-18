@@ -78,8 +78,7 @@ fn init_tracing(log_filter: &str) -> Option<SdkTracerProvider> {
 fn build_langfuse_provider() -> Option<SdkTracerProvider> {
     let public_key = non_blank(std::env::var("LANGFUSE_PUBLIC_KEY").ok())?;
     let secret_key = non_blank(std::env::var("LANGFUSE_SECRET_KEY").ok())?;
-    let host = non_blank(std::env::var("LANGFUSE_HOST").ok())
-        .or_else(|| non_blank(std::env::var("LANGFUSE_BASE_URL").ok()))
+    let host = non_blank(std::env::var("LANGFUSE_BASE_URL").ok())
         .unwrap_or_else(|| "https://cloud.langfuse.com".to_string());
 
     let exporter = match ExporterBuilder::new()
