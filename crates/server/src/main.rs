@@ -1,8 +1,15 @@
-use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use mewcode_server::store::fs::{FsStore, resolve_data_dir};
 use mewcode_server::{AppState, config::ServerConfig};
+use opentelemetry::KeyValue;
+use opentelemetry::trace::TracerProvider as _;
+use opentelemetry_langfuse::ExporterBuilder;
+use opentelemetry_sdk::Resource;
+use opentelemetry_sdk::runtime::Tokio;
+use opentelemetry_sdk::trace::SdkTracerProvider;
+use opentelemetry_sdk::trace::span_processor_with_async_runtime::BatchSpanProcessor;
 use tokio::net::TcpListener;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
@@ -11,10 +18,7 @@ async fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
 
     let config = ServerConfig::load()?;
-    tracing_subscriber::registry()
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.log)))
-        .with(fmt::layer().with_target(true))
-        .init();
+    let telemetry = init_tracing(&config.log);
 
     let addr: std::net::SocketAddr = format!("{}:{}", config.host, config.port)
         .parse()
@@ -23,42 +27,88 @@ async fn main() -> anyhow::Result<()> {
     // A create/write failure here aborts startup; we deliberately do not fall
     // back to an in-memory store.
     let data_dir = resolve_data_dir().context("failed to resolve mewcode data directory")?;
-    let store = Arc::new(
+    let store = std::sync::Arc::new(
         FsStore::new(data_dir.clone())
             .with_context(|| format!("failed to open session store at {}", data_dir.display()))?,
     );
     tracing::info!(data_dir = %data_dir.display(), "session store ready");
 
-    let tracer = mewcode_engine::LangfuseTracer::from_env().map(Arc::new);
-    match &tracer {
-        Some(t) => {
-            // Validate the keys/host against Langfuse without blocking startup.
-            // Logs the project on success, or the reason traces won't be recorded.
-            let t = t.clone();
-            tokio::spawn(async move {
-                match tokio::time::timeout(std::time::Duration::from_secs(10), t.health_check())
-                    .await
-                {
-                    Ok(Ok(project)) => {
-                        tracing::info!(project = %project, "Langfuse tracing enabled")
-                    }
-                    Ok(Err(e)) => tracing::warn!(
-                        error = %e,
-                        "Langfuse keys are set but the self-check failed; traces will not be recorded"
-                    ),
-                    Err(_) => tracing::warn!("Langfuse self-check timed out after 10s"),
-                }
-            });
-        }
-        None => tracing::info!(
-            "Langfuse tracing disabled (set LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY to enable)"
-        ),
-    }
-    let state = AppState::new(config.clone(), store).with_tracer(tracer);
+    let state = AppState::new(config.clone(), store);
 
     let listener = TcpListener::bind(addr).await?;
     tracing::info!(%addr, "mewcode server listening");
     let app = mewcode_server::build_app(state);
-    axum::serve(listener, app).await?;
+    let result = axum::serve(listener, app).await;
+
+    if let Some(provider) = telemetry {
+        if let Err(e) = provider.shutdown() {
+            tracing::warn!(error = %e, "failed to flush OpenTelemetry traces");
+        }
+    }
+
+    result?;
     Ok(())
+}
+
+fn init_tracing(log_filter: &str) -> Option<SdkTracerProvider> {
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(log_filter));
+    let provider = build_langfuse_provider();
+    let otel_layer = provider.as_ref().map(|provider| {
+        let tracer = provider.tracer("mewcode-server");
+        tracing_opentelemetry::layer().with_tracer(tracer)
+    });
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(otel_layer)
+        .with(fmt::layer().with_target(true))
+        .init();
+
+    if provider.is_some() {
+        tracing::info!("Langfuse OpenTelemetry tracing enabled");
+    } else {
+        tracing::info!(
+            "Langfuse tracing disabled (set LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY to enable)"
+        );
+    }
+
+    provider
+}
+
+fn build_langfuse_provider() -> Option<SdkTracerProvider> {
+    let public_key = non_blank(std::env::var("LANGFUSE_PUBLIC_KEY").ok())?;
+    let secret_key = non_blank(std::env::var("LANGFUSE_SECRET_KEY").ok())?;
+    let host = non_blank(std::env::var("LANGFUSE_HOST").ok())
+        .or_else(|| non_blank(std::env::var("LANGFUSE_BASE_URL").ok()))
+        .unwrap_or_else(|| "https://cloud.langfuse.com".to_string());
+
+    let exporter = match ExporterBuilder::new()
+        .with_host(&host)
+        .with_basic_auth(&public_key, &secret_key)
+        .with_timeout(Duration::from_secs(10))
+        .build()
+    {
+        Ok(exporter) => exporter,
+        Err(e) => {
+            eprintln!("failed to configure Langfuse exporter: {e}");
+            return None;
+        }
+    };
+
+    Some(
+        SdkTracerProvider::builder()
+            .with_resource(
+                Resource::builder()
+                    .with_attributes([KeyValue::new("service.name", "mewcode-server")])
+                    .build(),
+            )
+            .with_span_processor(BatchSpanProcessor::builder(exporter, Tokio).build())
+            .build(),
+    )
+}
+
+fn non_blank(value: Option<String>) -> Option<String> {
+    value
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }

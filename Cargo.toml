@@ -41,7 +41,11 @@ http = "1"
 rig-core = { version = "0.38" }
 
 # Tracing
+opentelemetry = "0.31"
+opentelemetry-langfuse = "0.6"
+opentelemetry_sdk = { version = "0.31", features = ["trace", "rt-tokio", "experimental_trace_batch_span_processor_with_async_runtime"] }
 tracing = "0.1"
+tracing-opentelemetry = "0.32"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 

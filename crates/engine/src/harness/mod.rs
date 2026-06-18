@@ -12,12 +12,12 @@ use std::sync::Arc;
 use mewcode_protocol::{Message, Mode, ModelId, StreamEvent};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 use uuid::Uuid;
 
 use crate::agent::build_system_prompt;
 use crate::config::EngineConfig;
 use crate::error::EngineError;
-use crate::langfuse::{LangfuseTracer, TurnReport};
 use crate::provider::Provider;
 use crate::skills::SkillRegistry;
 use crate::tools::ToolRegistry;
@@ -30,7 +30,6 @@ pub struct Harness {
     cancel: CancellationToken,
     skills: Arc<SkillRegistry>,
     tools: Arc<ToolRegistry>,
-    tracer: Option<Arc<LangfuseTracer>>,
     session_id: Option<Uuid>,
 }
 
@@ -60,16 +59,8 @@ impl Harness {
             cancel: CancellationToken::new(),
             skills,
             tools,
-            tracer: None,
             session_id: None,
         }
-    }
-
-    /// Attach an optional Langfuse tracer. Passing `None` (or never calling
-    /// this) leaves tracing disabled.
-    pub fn with_tracer(mut self, tracer: Option<Arc<LangfuseTracer>>) -> Self {
-        self.tracer = tracer;
-        self
     }
 
     /// Record the chat session id so reported turns are grouped by session in Langfuse.
@@ -106,10 +97,23 @@ impl Harness {
         messages: &[Message],
         tx: mpsc::Sender<StreamEvent>,
     ) -> Result<(), EngineError> {
-        let start = chrono::Utc::now();
-        let result = self.run_turn_inner(messages, &tx).await;
-        self.trace_turn(messages, &result, start);
-        result.map(|_| ())
+        let span = tracing::info_span!(
+            "chat-turn",
+            gen_ai.operation.name = "invoke_agent",
+            gen_ai.agent.name = "mewcode",
+            gen_ai.request.model = self.model.provider_id(),
+            mewcode.mode = ?self.mode,
+            langfuse.trace.name = "chat-turn",
+            langfuse.session.id = tracing::field::Empty,
+        );
+        if let Some(session_id) = self.session_id {
+            span.record("langfuse.session.id", session_id.to_string());
+        }
+
+        self.run_turn_inner(messages, &tx)
+            .instrument(span)
+            .await
+            .map(|_| ())
     }
 
     /// The turn proper: resolve config, select the user message, run one
@@ -141,34 +145,6 @@ impl Harness {
         // channel untouched for the caller's single `Error` event.
         self.emit_reply(&reply, tx).await?;
         Ok(reply)
-    }
-
-    /// Fire-and-forget the turn's outcome to Langfuse when a tracer is
-    /// configured. Reporting runs on its own task and never affects the turn's
-    /// result or the SSE stream.
-    fn trace_turn(
-        &self,
-        messages: &[Message],
-        result: &Result<String, EngineError>,
-        start: chrono::DateTime<chrono::Utc>,
-    ) {
-        let Some(tracer) = &self.tracer else {
-            return;
-        };
-        let report = TurnReport {
-            session_id: self.session_id.map(|id| id.to_string()),
-            model: self.model.provider_id().to_string(),
-            mode: format!("{:?}", self.mode),
-            input: last_user_text(messages).unwrap_or_default(),
-            outcome: match result {
-                Ok(reply) => Ok(reply.clone()),
-                Err(e) => Err(e.to_string()),
-            },
-            start,
-            end: chrono::Utc::now(),
-        };
-        let tracer = tracer.clone();
-        tokio::spawn(async move { tracer.report_turn(report).await });
     }
 
     /// Run exactly one completion through the routed provider and fold its text
