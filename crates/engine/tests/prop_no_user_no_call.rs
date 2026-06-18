@@ -1,7 +1,7 @@
-//! Property-based test: a history with no user message produces no completion.
+//! Property-based test: a history with no user message produces no agent call.
 //!
 //! Feature: session-flow-and-engine-v0, a history with no `Role::User`
-//! message yields no completion — `last_user_text` is `None` and `run_turn`
+//! message yields no agent invocation — `last_user_text` is `None` and `run_turn`
 //! fails the turn before any provider is built or any request is issued,
 //! so the stream channel never sees an event.
 //!
@@ -40,7 +40,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(200))]
 
     #[test]
-    fn no_user_message_yields_no_completion(
+    fn no_user_message_yields_no_agent_invocation(
         // Every message is an assistant message, so the history holds zero
         // `Role::User` messages by construction.
         history_spec in proptest::collection::vec(parts_strategy(), 0..8),

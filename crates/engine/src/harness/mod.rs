@@ -5,7 +5,7 @@
 
 mod completion;
 
-pub use self::completion::{last_user_text, reply_text};
+pub use self::completion::last_user_text;
 
 use std::sync::Arc;
 
@@ -89,7 +89,7 @@ impl Harness {
         self.tools.names()
     }
 
-    /// Run one completion against OpenCode Go and stream the reply as
+    /// Invoke the configured Rig agent once and stream the reply as
     /// `Start` → `TextDelta`* → `Finish`. Returns `Err` on any failure and
     /// emits nothing on that path — the caller owns the `Error` event.
     pub async fn run_turn(
@@ -141,7 +141,7 @@ impl Harness {
     }
 
     /// The turn proper: resolve config, select the user message, run one
-    /// completion, and emit the success-path events. Returns the assistant
+    /// agent invocation, and emit the success-path events. Returns the assistant
     /// reply on success so the caller can both report it and discard it. The
     /// SSE emission is unchanged — nothing reaches the channel on failure, so
     /// the server route stays the single owner of the `Error` event.
@@ -163,38 +163,46 @@ impl Harness {
         let system_prompt = build_system_prompt(self.mode, &self.skills, &self.tools);
         Self::record_turn_input(&tracing::Span::current(), &system_prompt, &user_text);
 
-        // Exactly one completion, no tool dispatch, no follow-up turn.
-        let reply = self.complete(provider, system_prompt, user_text).await?;
+        // Exactly one agent invocation. Tool wiring comes next; keeping the
+        // call behind `invoke_agent` means streaming can reuse the same agent
+        // construction path rather than a direct completion request.
+        let reply = self
+            .invoke_agent(provider, system_prompt, user_text)
+            .await?;
         Self::record_turn_output(&tracing::Span::current(), &reply);
 
-        // Only on success do we emit anything, so a failed completion leaves the
+        // Only on success do we emit anything, so a failed agent turn leaves the
         // channel untouched for the caller's single `Error` event.
         self.emit_reply(&reply, tx).await?;
         Ok(reply)
     }
 
-    /// Run exactly one completion through the routed provider and fold its text
-    /// segments into one reply string. Kept off the emission path so `run_turn`
-    /// emits nothing until a reply exists.
-    async fn complete(
+    /// Run exactly one prompt through the routed Rig agent. Kept off the
+    /// emission path so `run_turn` emits nothing until a reply exists.
+    async fn invoke_agent(
         &self,
         provider: Provider,
         system_prompt: String,
         user_text: String,
     ) -> Result<String, EngineError> {
-        let choice = provider
-            .complete(
+        provider
+            .invoke_agent(
                 self.model.provider_id(),
                 system_prompt,
                 user_text,
                 Self::MAX_TOKENS,
+                Self::MAX_AGENT_TURNS,
             )
-            .await?;
-        Ok(reply_text(&choice))
+            .await
     }
 
     /// Output token cap for a single turn.
     const MAX_TOKENS: u64 = 4096;
+
+    /// Max internal Rig agent turns. No tools are registered yet, so this is a
+    /// no-op today; keeping it explicit prevents the next phase from having to
+    /// rediscover where multi-turn depth belongs.
+    const MAX_AGENT_TURNS: usize = 1;
 
     /// Emit the success-path event sequence for one turn: exactly one `Start`
     /// carrying this turn's mode and model, then a single `TextDelta` (omitted

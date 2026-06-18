@@ -35,7 +35,7 @@ fn mode_strategy() -> impl Strategy<Value = Mode> {
 
 /// Forced upstream failures as they reach the handler. A non-success response
 /// surfaces as [`EngineError::UpstreamStatus`]; a transport failure surfaces through
-/// `run_turn`'s completion path as `EngineError::Other(e.to_string())`.
+/// `run_turn`'s agent path as `EngineError::Other(e.to_string())`.
 fn upstream_error_strategy() -> impl Strategy<Value = EngineError> {
     prop_oneof![
         (400u16..=599u16, "(?s).{0,64}")

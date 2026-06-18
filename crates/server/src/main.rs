@@ -55,7 +55,14 @@ fn init_tracing(log_filter: &str) -> Option<SdkTracerProvider> {
     let provider = build_langfuse_provider();
     let otel_layer = provider.as_ref().map(|provider| {
         let tracer = provider.tracer("mewcode-server");
-        tracing_opentelemetry::layer().with_tracer(tracer)
+        // Langfuse should show one clean Mew-level generation. Rig's internal
+        // provider span has model/usage but no IO fields, so exporting it
+        // creates a duplicate observation with null input/output.
+        tracing_opentelemetry::layer()
+            .with_tracer(tracer)
+            .with_filter(EnvFilter::new(
+                "info,rig::agent_chat=off,rig::completions=off",
+            ))
     });
 
     tracing_subscriber::registry()
