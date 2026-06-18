@@ -12,7 +12,7 @@ use super::overlay::{render_overlay, skills_lines, tools_lines};
 use super::spinner::spinner_frame;
 
 /// Session: scrollable transcript, input bar, status bar, plus overlays.
-pub(super) fn render_session(frame: &mut Frame, area: Rect, s: &SessionState) {
+pub(super) fn render_session(frame: &mut Frame, area: Rect, s: &mut SessionState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -22,13 +22,11 @@ pub(super) fn render_session(frame: &mut Frame, area: Rect, s: &SessionState) {
         ])
         .split(area);
 
-    // --- transcript ---
     let mut lines: Vec<Line> = Vec::new();
     for msg in &s.session.messages {
         lines.extend(render_message(msg));
         lines.push(Line::from(""));
     }
-    // The in-flight assistant turn, if any.
     if let Some(st) = &s.streaming {
         lines.push(Line::from(Span::styled(
             format!("{} assistant", spinner_frame(st.started_at.elapsed())),
@@ -39,20 +37,31 @@ pub(super) fn render_session(frame: &mut Frame, area: Rect, s: &SessionState) {
         }
     }
 
-    let transcript = Paragraph::new(Text::from(lines))
-        .block(Block::bordered().title(format!(" {} ", s.session.title)))
-        .wrap(Wrap { trim: false })
-        .scroll((s.scroll, 0));
-    frame.render_widget(transcript, chunks[0]);
+    let block = Block::bordered().title(format!(" {} ", s.session.title));
+    let inner = block.inner(chunks[0]);
 
-    // --- input bar ---
+    // Measure the wrapped height at the inner width (the same width the text is
+    // rendered into below), so "the bottom" is computed exactly. `line_count`
+    // is the ratatui-unstable API enabled in Cargo.toml.
+    let para = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false });
+    let total = para.line_count(inner.width).min(u16::MAX as usize) as u16;
+
+    s.viewport = inner.height;
+    s.max_scroll = total.saturating_sub(inner.height);
+    if s.follow {
+        s.scroll = s.max_scroll;
+    } else {
+        s.scroll = s.scroll.min(s.max_scroll);
+    }
+
+    frame.render_widget(para.block(block).scroll((s.scroll, 0)), chunks[0]);
+
     let input_text = s.input.lines().join("\n");
     let input = Paragraph::new(input_text)
         .block(Block::bordered().title(" message "))
         .wrap(Wrap { trim: false });
     frame.render_widget(input, chunks[1]);
 
-    // --- status bar ---
     let status = if s.streaming.is_some() {
         format!(
             "{}  {:?}  •  streaming…",
@@ -61,7 +70,7 @@ pub(super) fn render_session(frame: &mut Frame, area: Rect, s: &SessionState) {
         )
     } else {
         format!(
-            "{}  {:?}  •  /tools  /skills  •  Esc back",
+            "{}  {:?}  •  PgUp/PgDn scroll  •  /tools  /skills  •  Esc back",
             s.session.model.display_name(),
             s.session.mode
         )
@@ -71,7 +80,6 @@ pub(super) fn render_session(frame: &mut Frame, area: Rect, s: &SessionState) {
         chunks[2],
     );
 
-    // --- overlays ---
     match s.overlay {
         Overlay::None => {}
         Overlay::Tools => render_overlay(frame, area, "Tools", tools_lines()),

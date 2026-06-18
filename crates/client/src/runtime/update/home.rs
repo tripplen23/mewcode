@@ -13,7 +13,7 @@ pub(super) fn on_home_key(screen: &mut Screen, should_quit: &mut bool, key: KeyE
         }
         KeyCode::Char('n') => {
             *screen = Screen::NewSession(NewSessionState::default());
-            Cmd::None
+            Cmd::LoadModels
         }
         KeyCode::Up => {
             if let Screen::Home(h) = screen {

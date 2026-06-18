@@ -6,6 +6,7 @@ use mewcode_protocol::event::ChatRequest;
 use mewcode_protocol::routes::{CHAT, HEALTH, MODELS, SESSION_BY_ID, SESSIONS};
 use mewcode_protocol::{Message, Mode, ModelId, ModelKind, StreamEvent};
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 /// Errors raised at the network boundary.
 ///
@@ -128,15 +129,21 @@ impl ApiClient {
             .await
     }
 
-    /// `GET /models`
-    pub async fn models(&self) -> reqwest::Result<Vec<ModelEntry>> {
-        self.inner
+    /// `GET /models` — fetch the model registry.
+    ///
+    /// A per-request 10 s timeout bounds exactly this call, so a hung registry
+    /// fetch fails fast (into the picker's fallback) instead of wedging the
+    /// dialog open forever. Transport error, non-success status, decode
+    /// failure, or timeout all surface as one [`NetError`].
+    pub async fn models(&self) -> Result<Vec<ModelEntry>, NetError> {
+        let resp = self
+            .inner
             .get(format!("{}{}", self.base_url, MODELS))
+            .timeout(Duration::from_secs(10))
             .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await
+            .await?;
+        let bytes = ensure_success(resp)?.bytes().await?;
+        Ok(serde_json::from_slice(&bytes)?)
     }
 
     /// `GET /sessions` — list every session as a summary, newest-first.

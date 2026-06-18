@@ -1,11 +1,13 @@
-//! SSE helper: build an axum SSE response that streams a `StreamEvent` channel.
+//! SSE helper: build an [axum](https://docs.rs/axum/latest/axum/) SSE
+//! response that streams a `StreamEvent` channel.
 
 use axum::response::sse::{Event, Sse};
 use futures::stream::Stream;
 use mewcode_protocol::StreamEvent;
 use std::convert::Infallible;
 
-/// Convert a `tokio::sync::mpsc::Receiver<StreamEvent>` into an axum SSE body.
+/// Convert a [`tokio::sync::mpsc::Receiver<StreamEvent>`](https://docs.rs/tokio/latest/tokio/sync/mpsc/struct.Receiver.html)
+/// into an [axum](https://docs.rs/axum/latest/axum/) SSE body.
 pub fn from_channel(
     rx: tokio::sync::mpsc::Receiver<StreamEvent>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {

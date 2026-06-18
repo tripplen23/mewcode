@@ -1,16 +1,29 @@
-//! TUI runtime: the Elm-style model, messages, and the event loop.
+//! The TUI's event loop and the bits that talk to the outside world.
 //!
-//! The model lives in [`model`], the pure state transition in [`mod@update`],
-//! and the rendering in [`view`]. This module owns the imperative shell: a
-//! RAII terminal guard, the crossterm-backed event loop, the input/ticker
-//! tasks, the [`Cmd`] dispatcher, and the SSE consumer.
+//! The TUI is split into three pieces that work together:
 //!
-//! > Idiom: RAII terminal guard. Raw mode and the alternate screen are entered
-//! > in `TerminalGuard::new`; its `Drop` restores cooked mode and leaves the
-//! > alternate screen. So a normal exit, an error `?`-return, or an unwinding
-//! > panic all hand the user back a working terminal — there is no cleanup path
-//! > to forget. `unwrap` stays off the production path: `anyhow` sits at this
-//! > boundary, `thiserror`/`NetError` at the `net` boundary.
+//! - [`model`] — the data: which screen is showing, what the user has typed,
+//!   the in-flight chat turn, and so on.
+//! - [`mod@update`] — a pure function that takes the model and a `Msg` (e.g. a key
+//!   press, a tick, a server response) and returns the next model plus a
+//!   [`Cmd`] describing any side effect to run.
+//! - [`view`] — turns the model into pixels on the screen. The session
+//!   transcript is the one exception: it writes its scroll bookkeeping back
+//!   during rendering, because the wrapped line count is only known at draw time.
+//!
+//! This file holds the rest: the event loop that wires those three together,
+//! the terminal guard that hands the user a working terminal on every exit
+//! path, the background tasks that read keys and tick the clock, the
+//! dispatcher that runs [`Cmd`]s, and the SSE consumer that turns the
+//! server's stream into `Msg`s.
+//!
+//! Two boundaries, one rule:
+//! - Errors from the user-facing world (terminal setup, runtime crashes) come
+//!   back as `anyhow::Error`.
+//! - Errors from talking to the server come back as the typed [`NetError`]
+//!   defined in `crate::net`, never as a string.
+//!
+//! `unwrap` lives on neither boundary — both types force a deliberate choice.
 
 pub mod model;
 pub mod update;
@@ -39,7 +52,9 @@ use mewcode_protocol::StreamEvent;
 use mewcode_protocol::event::ChatRequest;
 
 use crate::config::ClientConfig;
-use crate::net::ApiClient;
+use crate::net::{ApiClient, NetError};
+
+use model::CreateError;
 
 const CHANNEL_CAPACITY: usize = 256;
 const TICK_INTERVAL: Duration = Duration::from_millis(50);
@@ -78,9 +93,9 @@ impl TerminalGuard {
 }
 
 impl Drop for TerminalGuard {
+    /// Best-effort restore: nothing here may panic or early-return, since we
+    /// might already be unwinding. Errors are intentionally swallowed.
     fn drop(&mut self) {
-        // Best-effort restore: nothing here may panic or early-return, since we
-        // might already be unwinding. Errors are intentionally swallowed.
         let _ = disable_raw_mode();
         let _ = execute!(io::stdout(), LeaveAlternateScreen);
         let _ = self.terminal.show_cursor();
@@ -110,7 +125,7 @@ pub async fn run(config: ClientConfig) -> Result<()> {
         // user always sees a fresh frame, even after a long await.
         guard
             .terminal
-            .draw(|frame| view::render(frame, &app))
+            .draw(|frame| view::render(frame, &mut app))
             .context("drawing frame")?;
 
         // All senders dropping closes the channel; treat that as a clean exit.
@@ -124,7 +139,6 @@ pub async fn run(config: ClientConfig) -> Result<()> {
     }
 
     Ok(())
-    // `guard` drops here → terminal restored.
 }
 
 /// Spawn the blocking input reader: it polls crossterm for events and forwards
@@ -182,11 +196,22 @@ fn dispatch(cmd: Cmd, api: &ApiClient, tx: &mpsc::Sender<Msg>) {
                 let _ = tx.send(Msg::SessionsLoaded(result)).await;
             });
         }
+        Cmd::LoadModels => {
+            let api = api.clone();
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                let result = api.models().await.map_err(|e| e.to_string());
+                let _ = tx.send(Msg::ModelsLoaded(result)).await;
+            });
+        }
         Cmd::CreateSession(req) => {
             let api = api.clone();
             let tx = tx.clone();
             tokio::spawn(async move {
-                let result = api.create_session(&req).await.map_err(|e| e.to_string());
+                let result = api
+                    .create_session(&req)
+                    .await
+                    .map_err(create_error_from_net);
                 let _ = tx.send(Msg::SessionCreated(result)).await;
             });
         }
@@ -203,6 +228,22 @@ fn dispatch(cmd: Cmd, api: &ApiClient, tx: &mpsc::Sender<Msg>) {
             let tx = tx.clone();
             tokio::spawn(run_chat_stream(api, req, tx));
         }
+    }
+}
+
+/// Map a [`NetError`] from `create_session` into a [`CreateError`] at the
+/// dispatch boundary so the pure `update` need not re-derive HTTP semantics.
+///
+/// Only `400 Bad Request` is treated as the empty-title rejection (the
+/// server emits it when the trimmed title is empty); every other status —
+/// including other 4xx — becomes [`CreateError::Other`] so the dialog shows
+/// the real error instead of a misleading title hint.
+fn create_error_from_net(e: NetError) -> CreateError {
+    match &e {
+        NetError::Status(status) if status.as_u16() == 400 => {
+            CreateError::EmptyTitle(e.to_string())
+        }
+        _ => CreateError::Other(e.to_string()),
     }
 }
 

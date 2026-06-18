@@ -134,7 +134,7 @@ fn home_enter_opens_selected_session() {
 #[test]
 fn home_n_opens_new_session_form() {
     let mut app = home_with(1);
-    assert!(matches!(update(&mut app, char_key('n')), Cmd::None));
+    assert!(matches!(update(&mut app, char_key('n')), Cmd::LoadModels));
     assert!(matches!(app.screen, Screen::NewSession(_)));
 }
 

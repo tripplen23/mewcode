@@ -10,7 +10,9 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tui_textarea::{Input, Key};
 
-use super::model::{App, Cmd, Msg, NewSessionField, Screen, SessionState, Toast};
+use super::model::{
+    App, Cmd, CreateError, ModelPicker, Msg, NewSessionField, Screen, SessionState, Toast,
+};
 
 mod home;
 mod new_session;
@@ -65,16 +67,38 @@ pub fn update(app: &mut App, msg: Msg) -> Cmd {
             Cmd::None
         }
 
+        Msg::ModelsLoaded(result) => {
+            if let Screen::NewSession(n) = screen {
+                let (picker, err) = ModelPicker::from_registry(result);
+                n.model = picker;
+                n.error = err;
+            }
+            Cmd::None
+        }
+
         Msg::SessionCreated(result) => match result {
             Ok(session) => {
+                // Land in the new session, which starts with empty history.
                 *screen = Screen::Session(SessionState::new(session));
                 Cmd::None
             }
-            Err(e) => {
+            // The server rejected an empty title — keep focus on Title,
+            // retain the entered values, and show the required-title hint.
+            Err(CreateError::EmptyTitle(_)) => {
                 if let Screen::NewSession(n) = screen {
+                    n.submitting = false;
                     n.field = NewSessionField::Title;
+                    n.error = Some(new_session::REQUIRED_TITLE_HINT.to_string());
                 }
-                *toast = Some(Toast::error(e));
+                Cmd::None
+            }
+            // Any other failure — stay on NewSession, retain title/model/
+            // mode, clear the in-flight flag, and set the persistent error.
+            Err(CreateError::Other(message)) => {
+                if let Screen::NewSession(n) = screen {
+                    n.submitting = false;
+                    n.error = Some(message);
+                }
                 Cmd::None
             }
         },
@@ -103,13 +127,15 @@ pub fn update(app: &mut App, msg: Msg) -> Cmd {
 
 /// Translate a crossterm [`KeyEvent`] into a [`tui_textarea::Input`].
 ///
-/// tui-textarea 0.7 still bundles crossterm 0.28, so its built-in
-/// `From<KeyEvent>` impl targets that older crate. The client talks crossterm
-/// 0.29 (via ratatui 0.30), so we map the event ourselves — mirroring
-/// tui-textarea's own mapping. Ceiling: this must stay in sync with
-/// tui-textarea's conversion; upgrade path is deleting it once tui-textarea
-/// publishes a crossterm-0.29 release. Key-release events are filtered by the
-/// input reader upstream (`runtime::mod`), so this fn never sees them.
+/// [`tui-textarea`](https://docs.rs/tui-textarea/latest/tui_textarea/) 0.7
+/// still bundles crossterm 0.28, so its built-in `From<KeyEvent>` impl
+/// targets that older crate. The client talks crossterm 0.29 (via
+/// [ratatui](https://docs.rs/ratatui/latest/ratatui/) 0.30), so we map the
+/// event ourselves — mirroring tui-textarea's own mapping. Ceiling: this
+/// must stay in sync with tui-textarea's conversion; upgrade path is deleting
+/// it once tui-textarea publishes a crossterm-0.29 release. Key-release
+/// events are filtered by the input reader upstream (`runtime::mod`), so
+/// this fn never sees them.
 pub(super) fn key_to_input(key: KeyEvent) -> Input {
     let code = match key.code {
         KeyCode::Char(c) => Key::Char(c),

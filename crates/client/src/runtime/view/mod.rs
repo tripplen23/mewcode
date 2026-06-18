@@ -1,14 +1,21 @@
-//! Per-screen rendering for the TUI.
+//! Per-screen rendering: turns the model into pixels on the terminal.
 //!
-//! `view` is a pure function of the model: [`render`] draws the current
-//! [`App`] into a ratatui [`Frame`] and never mutates state. Animations
-//! (spinner, toast fade) are derived from each `started_at` instant, so a
-//! redraw on every 50 ms tick advances them with no model bookkeeping.
+//! Given a model, the view paints a single frame and returns. It is a pure
+//! function of the model with one exception: the session renderer writes
+//! `scroll`/`max_scroll`/`viewport` back during the draw, because the wrapped
+//! line count is only known once [ratatui](https://docs.rs/ratatui/latest/ratatui/)
+//! has actually wrapped the text.
 //!
-//! > Note on dependency versions: `tui-textarea` 0.7 still renders against
-//! > ratatui 0.29, but the client draws with ratatui 0.30. Rather than bridge
-//! > the two `Widget` traits, the editors are rendered by reading their
-//! > `.lines()` and drawing a plain `Paragraph` in ratatui 0.30.
+//! Animations (spinner, toast fade) work the same way: each one stores only
+//! the `started_at` instant, and the view derives the current frame from it
+//! on every redraw. The 50 ms tick task pushes a redraw; nothing on the model
+//! has to be written per frame.
+//!
+//! [`tui-textarea`](https://docs.rs/tui-textarea/latest/tui_textarea/) 0.7
+//! still renders against ratatui 0.29, but the client draws with ratatui 0.30.
+//! Rather than bridge the two `Widget` traits, the editors are rendered by
+//! reading the textarea's `.lines()` and drawing them as a plain ratatui 0.30
+//! `Paragraph`.
 
 use ratatui::Frame;
 
@@ -32,9 +39,9 @@ use session::render_session;
 use toast::render_toast;
 
 /// Draw the whole application: the active screen, then any toast on top.
-pub fn render(frame: &mut Frame, app: &App) {
+pub fn render(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
-    match &app.screen {
+    match &mut app.screen {
         Screen::Home(h) => render_home(frame, area, h),
         Screen::NewSession(n) => render_new_session(frame, area, n),
         Screen::Session(s) => render_session(frame, area, s),

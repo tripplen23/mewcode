@@ -1,9 +1,8 @@
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
+use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Paragraph};
-
-use mewcode_protocol::ModelId;
 
 use super::super::model::{NewSessionField, NewSessionState};
 
@@ -27,11 +26,14 @@ pub(super) fn render_new_session(frame: &mut Frame, area: Rect, n: &NewSessionSt
         chunks[0],
     );
 
-    let model = ModelId::ALL.get(n.model_idx).copied().unwrap_or_default();
+    let model_label = match n.model.selected_model() {
+        Some(model) => format!("‹ {} ›", model.display_name()),
+        None => "loading…".to_string(),
+    };
     frame.render_widget(
         field_block(
             "Model  (←/→)",
-            &format!("‹ {} ›", model.display_name()),
+            &model_label,
             n.field == NewSessionField::Model,
         ),
         chunks[1],
@@ -45,6 +47,20 @@ pub(super) fn render_new_session(frame: &mut Frame, area: Rect, n: &NewSessionSt
         ),
         chunks[2],
     );
+
+    let mut status: Vec<Line> = Vec::new();
+    if n.submitting {
+        status.push(Line::styled(
+            "Creating session…",
+            Style::default().fg(Color::Yellow),
+        ));
+    }
+    if let Some(err) = &n.error {
+        status.push(Line::styled(err.clone(), Style::default().fg(Color::Red)));
+    }
+    if !status.is_empty() {
+        frame.render_widget(Paragraph::new(status), chunks[3]);
+    }
 
     let footer = Paragraph::new("Tab next field  •  Enter create  •  Esc cancel")
         .style(Style::default().fg(Color::DarkGray));
