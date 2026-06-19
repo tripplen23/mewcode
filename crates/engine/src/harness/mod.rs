@@ -20,7 +20,7 @@ use crate::config::EngineConfig;
 use crate::error::EngineError;
 use crate::history::HistoryStrategy;
 use crate::memory::MemoryStore;
-use crate::provider::Provider;
+use crate::provider::{AgentRequest, Provider};
 use crate::skills::SkillRegistry;
 use crate::tools::ToolRegistry;
 use crate::trace;
@@ -159,11 +159,12 @@ impl Harness {
 
     /// The turn proper: resolve config, select the user message, build
     /// history from prior turns, optionally inject durable memory into
-    /// the system prompt, then run one agent invocation and emit the
-    /// success-path events. Returns the assistant reply on success so the
-    /// caller can both report it and discard it. The SSE emission is
-    /// unchanged — nothing reaches the channel on failure, so the server
-    /// route stays the single owner of the `Error` event.
+    /// the system prompt, then run one agent invocation streaming
+    /// TextDelta events through the channel and emit the Finish event.
+    /// Returns the assistant reply on success so the caller can both
+    /// report it and discard it. The SSE emission is unchanged —
+    /// nothing reaches the channel on failure, so the server route stays
+    /// the single owner of the `Error` event.
     async fn run_turn_inner(
         &self,
         messages: &[Message],
@@ -190,7 +191,7 @@ impl Harness {
             .unwrap_or(0);
         let history = self.history_strategy.build(&messages[..current_user_pos]);
 
-        // Build the system prompt, optionally injecting durable memory (Phase 9).
+        // Build the system prompt, optionally injecting durable memory.
         let mut system_prompt = build_system_prompt(self.mode, &self.skills, &self.tools);
         if let Some(memory_section) = self.memory.as_ref().and_then(|m| m.format()) {
             system_prompt.push_str("\n\n");
@@ -200,38 +201,59 @@ impl Harness {
         let provider = Provider::for_model(self.model, &cfg.api_key, &cfg.base_url)?;
         Self::record_turn_input(&tracing::Span::current(), &system_prompt, &user_text);
 
-        // Exactly one agent invocation with history. Tool wiring comes next;
-        // keeping the call behind `invoke_agent` means streaming can reuse the
-        // same agent construction path rather than a direct completion request.
+        // Emit Start before the first token so the client can prepare.
+        let message_id = uuid::Uuid::new_v4();
+        let started = std::time::Instant::now();
+        tx.send(StreamEvent::Start {
+            message_id,
+            mode: self.mode,
+            model: self.model,
+        })
+        .await
+        .map_err(|e| EngineError::Other(e.to_string()))?;
+
+        // Stream the reply — invoke_agent_streaming emits TextDelta events
+        // as tokens arrive from the provider.
         let reply = self
-            .invoke_agent(provider, system_prompt, history, user_text)
+            .stream_agent(provider, system_prompt, history, user_text, tx)
             .await?;
         Self::record_turn_output(&tracing::Span::current(), &reply);
 
-        // Only on success do we emit anything, so a failed agent turn leaves the
-        // channel untouched for the caller's single `Error` event.
-        self.emit_reply(&reply, tx).await?;
+        // Emit Finish, recording wall-clock duration (token counts deferred
+        // until provider reports them).
+        tx.send(StreamEvent::Finish {
+            duration_ms: started.elapsed().as_millis() as u64,
+            input_tokens: None,
+            output_tokens: None,
+        })
+        .await
+        .map_err(|e| EngineError::Other(e.to_string()))?;
+
         Ok(reply)
     }
 
     /// Run exactly one prompt through the routed Rig agent with conversation
-    /// history. Kept off the emission path so `run_turn` emits nothing until
-    /// a reply exists.
-    async fn invoke_agent(
+    /// history, streaming TextDelta events through `tx`. Kept off the emission
+    /// path so `run_turn` emits nothing until a reply exists.
+    async fn stream_agent(
         &self,
         provider: Provider,
         system_prompt: String,
         history: Vec<rig_core::completion::Message>,
         user_text: String,
+        tx: &mpsc::Sender<StreamEvent>,
     ) -> Result<String, EngineError> {
         provider
-            .invoke_agent(
-                self.model.provider_id(),
-                system_prompt,
-                history,
-                user_text,
-                Self::MAX_TOKENS,
-                Self::MAX_AGENT_TURNS,
+            .invoke_agent_streaming(
+                AgentRequest {
+                    model_id: self.model.provider_id(),
+                    system_prompt,
+                    history,
+                    user_text,
+                    max_tokens: Self::MAX_TOKENS,
+                    max_turns: Self::MAX_AGENT_TURNS,
+                },
+                tx,
             )
             .await
     }

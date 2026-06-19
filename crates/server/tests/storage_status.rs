@@ -17,6 +17,7 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
+use mewcode_engine::memory::MemoryStore as FactStore;
 use mewcode_protocol::routes::STORAGE_STATUS;
 use mewcode_server::store::SessionStore;
 use mewcode_server::store::fs::FsStore;
@@ -40,7 +41,8 @@ fn test_config() -> ServerConfig {
 
 /// `GET /storage/status` against an app over `store`, returning the JSON body.
 async fn status_body(store: Arc<dyn SessionStore>) -> Value {
-    let app = build_app(AppState::new(test_config(), store));
+    let fact_store = FactStore::new(std::env::temp_dir().join(uuid::Uuid::new_v4().to_string()));
+    let app = build_app(AppState::new(test_config(), store, fact_store));
     let resp = app
         .oneshot(
             Request::builder()

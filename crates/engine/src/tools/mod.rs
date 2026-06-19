@@ -18,15 +18,18 @@ use std::sync::Arc;
 use mewcode_protocol::{ToolContracts, ToolDescriptor, ToolError, ToolOutput};
 use serde_json::Value;
 
+use crate::memory::MemoryStore;
 use crate::skills::SkillRegistry;
 
 mod glob;
 mod list_directory;
+mod memory;
 mod read_file;
 mod use_skill;
 
 pub use glob::GlobTool;
 pub use list_directory::ListDirectoryTool;
+pub use memory::MewcodeMemoryTool;
 pub use read_file::ReadFileTool;
 pub use use_skill::UseSkillTool;
 
@@ -106,12 +109,20 @@ impl ProjectContext {
     }
 }
 
-/// Build the default tool registry: every read-only tool plus `use_skill`.
-pub fn default_registry(ctx: ProjectContext, skills: Skills) -> ToolRegistry {
+/// Build the default tool registry: every read-only tool plus `use_skill`
+/// and, when a memory store is provided, `mewcode_memory`.
+pub fn default_registry(
+    ctx: ProjectContext,
+    skills: Skills,
+    memory: Option<MemoryStore>,
+) -> ToolRegistry {
     let mut reg = ToolRegistry::new();
     reg.register(Arc::new(ReadFileTool::new(ctx.clone())));
     reg.register(Arc::new(ListDirectoryTool::new(ctx.clone())));
     reg.register(Arc::new(GlobTool::new(ctx)));
     reg.register(Arc::new(UseSkillTool::new(skills)));
+    if let Some(store) = memory {
+        reg.register(Arc::new(MewcodeMemoryTool::new(store)));
+    }
     reg
 }
