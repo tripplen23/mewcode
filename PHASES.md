@@ -5,6 +5,9 @@ This file tracks the build order agreed in the kickoff plan. Each phase ends wit
 
 [tool-guide]: https://www.anthropic.com/engineering/writing-tools-for-agents
 [skills-guide]: https://resources.anthropic.com/hubfs/The-Complete-Guide-to-Building-Skill-for-Claude.pdf
+[mastra-memory]: https://mastra.ai/docs/memory/overview
+[mastra-observational]: https://mastra.ai/docs/memory/observational-memory
+[mastra-message-history]: https://mastra.ai/docs/memory/message-history
 
 ## Phase 1 — Workspace skeleton ✅
 - [x] Cargo workspace at `/home/binhfnef/Projects/personal/mew_code/mewcode`
@@ -111,39 +114,57 @@ registry.
 - [x] rig Anthropic-compat client for `https://opencode.ai/zen/go/v1/messages`
 - [x] First end-to-end smoke test
 
-## Phase 8 — Streaming
+## Phase 8 — Conversation history
+- Fix the in-session history bug: `Harness::run_turn` currently sends only
+  the latest user turn (`last_user_text` + `agent.prompt(text)`), so the model
+  has no context for follow-up questions
+- Replace `Provider::invoke_agent(text)` with a history-aware call: map
+  `&[mewcode_protocol::Message]` to `Vec<rig_core::message::Message>` and
+  hand it to the agent via `with_history(...)` on `PromptRequest` /
+  `StreamingPromptRequest`
+- Token-aware window: keep the system prompt, keep recent N turns verbatim,
+  summarise or drop older turns; start with a conservative N (e.g. 20) and
+  tune per model
+- Tests: a multi-turn end-to-end against the harness, plus a property test
+  that the model receives every prior turn (no history dropped on the wire)
+- Rig has the primitive but no high-level memory abstraction; observational /
+  compaction memory (cf. [Mastra observational memory][mastra-observational])
+  is a separate later phase
+- Refs: [Mastra memory overview][mastra-memory], [Mastra message history][mastra-message-history]
+
+## Phase 9 — Streaming
 - Wire rig streaming completion into SSE on the server
 - Tokens stream live to the TUI
 
-## Phase 9 — First tool
+## Phase 10 — First tool
 - `read_file` as `#[rig::tool]`, exercised end-to-end with tracing span
 - Ref: [Anthropic tool guide][tool-guide]
 
-## Phase 10 — Remaining tools
+## Phase 11 — Remaining tools
 - `write_file`, `edit_file`, `list_dir`, `glob`, `grep`, `bash`
 - PLAN mode gate
 - Tracing span on every tool
 - Ref: [Anthropic tool guide][tool-guide]
 
-## Phase 11 — Skills runtime
+## Phase 12 — Skills runtime
 - Skill hot-reload: pick up new or changed `SKILL.md` files without restarting
 - Skill assets: bundle files alongside the body, exposed via `use_skill`
 - Lint `SKILL.md` frontmatter on load, surface errors at boot
 - More bundled sample skills (`explain-error`, `refactor-rust`)
 - Ref: [Anthropic Skills guide][skills-guide]
 
-## Phase 12 — TUI polish
+## Phase 13 — TUI polish
 - Markdown rendering (`tui-markdown`)
 - Code blocks with `syntect`
 - Tool cards, theme switcher, slash command menu, @-mention popover
 - Toast, trace pane, animations
 
-## Phase 13 — Session resume
+## Phase 14 — Session resume
 - Load history from the session store, replay into the agent
 
-## Phase 14 — Config & persistence
+## Phase 15 — Config & persistence
 - `~/.config/mewcode/config.toml`
 - Last-used model, theme, recent sessions
 
-## Phase 15 — Hardening
+## Phase 16 — Hardening
 - Error toasts, Ctrl-C graceful shutdown, retries, command palette
