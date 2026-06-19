@@ -173,14 +173,41 @@ Checkpoint: agent sees durable facts every turn, can update them via tool,
 - [x] Wire rig streaming completion into SSE on the server
 - [x] Tokens stream live to the TUI
 
-## Phase 11 — First tool
-- `read_file` as `#[rig::tool]`, exercised end-to-end with tracing span
+## Phase 11 — Tool-calling loop
+- Bridge mewcode's `ToolContracts` trait to Rig's `ToolDyn` via a
+  `RigToolAdapter` wrapper so the Rig agent can call mewcode tools
+  natively
+- Wire the `ToolRegistry` (built via `default_registry`) into the Rig
+  agent builder in `Provider::invoke_agent_streaming` — pass tools via
+  `.tools(Vec<Box<dyn ToolDyn>>)`
+- Increase `MAX_AGENT_TURNS` from 1 to allow multi-turn tool-call →
+  result → response cycles (Rig handles the loop internally)
+- Emit `StreamEvent::ToolInputAvailable` and `ToolOutputAvailable` from
+  `stream_agent_completion` when the stream yields
+  `StreamedAssistantContent::ToolCall` and `StreamUserItem` items
+- Exercise `read_file` end-to-end: the model asks to read a file, the
+  adapter dispatches to `ReadFileTool::execute`, the result goes back
+  to the model, and the final reply references the file contents
+- Also exercise `mewcode_memory` end-to-end: the model writes a fact,
+  the adapter dispatches to `MewcodeMemoryTool::execute`, the fact
+  persists to `memories/default.md`
+- Tracing: record tool calls on the `chat-turn` span so Langfuse shows
+  tool-call observations alongside the generation
 - Ref: [Anthropic tool guide][tool-guide]
 
-## Phase 12 — Remaining tools
-- `write_file`, `edit_file`, `list_dir`, `glob`, `grep`, `bash`
-- PLAN mode gate
-- Tracing span on every tool
+Checkpoint: the agent can call `read_file` and `mewcode_memory` during
+a chat turn, the TUI sees `ToolInputAvailable`/`ToolOutputAvailable`
+events, Langfuse traces show tool-call observations, and all existing
+tests still pass.
+
+## Phase 12 — Remaining tools + PLAN mode gate
+- `write_file`, `edit_file`, `list_dir`, `glob`, `grep`, `bash` as
+  `ToolContracts` implementations registered in `default_registry`
+- PLAN mode gate: tools with `destructive: true` or `read_only: false`
+  are filtered out of the registry when `Mode == Plan` — the system
+  prompt already excludes their descriptors, now the registry must
+  also refuse to dispatch them
+- Tracing span on every tool call (tool name, input, output, duration)
 - Ref: [Anthropic tool guide][tool-guide]
 
 ## Phase 13 — Skills runtime
