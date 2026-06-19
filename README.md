@@ -36,12 +36,11 @@
 ## Architecture
 
 ```
-mewcode/
-  crates/
-    protocol/  shared types, wire format (no I/O)
-    engine/    Rig-based agent harness, tools, skills, streaming, memory
-    server/    axum backend + session store + memory API
-    client/    ratatui terminal UI + CLI dispatcher
+crates/
+  protocol/  shared types, wire format (no I/O)
+  engine/    Rig-based agent harness, tools, skills, streaming, memory
+  server/    axum backend + session store + memory API
+  client/    ratatui terminal UI + CLI dispatcher
 ```
 
 ## Getting started
