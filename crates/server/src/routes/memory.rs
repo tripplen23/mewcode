@@ -27,9 +27,7 @@ pub struct MemoryWriteRequest {
 }
 
 /// `GET /memory`
-pub async fn get_memory(
-    State(state): State<AppState>,
-) -> Json<MemoryResponse> {
+pub async fn get_memory(State(state): State<AppState>) -> Json<MemoryResponse> {
     let content = state.memory.read();
     Json(MemoryResponse {
         profile: "default".to_string(),

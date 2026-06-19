@@ -144,17 +144,12 @@ async fn stream_agent_completion<M: rig_core::completion::CompletionModel + 'sta
     history: Vec<rig_core::completion::Message>,
     tx: &mpsc::Sender<StreamEvent>,
 ) -> Result<String, EngineError> {
-    let mut stream = agent
-        .stream_prompt(user_text)
-        .with_history(history)
-        .await;
+    let mut stream = agent.stream_prompt(user_text).with_history(history).await;
 
     let mut full_reply = String::new();
     while let Some(item) = stream.next().await {
         match item {
-            Ok(MultiTurnStreamItem::StreamAssistantItem(
-                StreamedAssistantContent::Text(t),
-            )) => {
+            Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(t))) => {
                 let delta = t.text;
                 let _ = tx
                     .send(StreamEvent::TextDelta {
@@ -167,7 +162,11 @@ async fn stream_agent_completion<M: rig_core::completion::CompletionModel + 'sta
                 if full_reply.is_empty() {
                     let text = response.response().to_string();
                     if !text.is_empty() {
-                        let _ = tx.send(StreamEvent::TextDelta { delta: text.clone() }).await;
+                        let _ = tx
+                            .send(StreamEvent::TextDelta {
+                                delta: text.clone(),
+                            })
+                            .await;
                         full_reply = text;
                     }
                 }

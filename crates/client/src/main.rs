@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, Args};
+use clap::{Args, Parser, Subcommand};
 
 use mewcode_client::ClientConfig;
 
@@ -151,5 +151,7 @@ async fn list_profiles() -> Result<Vec<String>, anyhow::Error> {
     let url = format!("{}/memory", config.api_url);
     let resp = reqwest::get(&url).await?;
     let body: serde_json::Value = resp.json().await?;
-    Ok(vec![body["profile"].as_str().unwrap_or("default").to_string()])
+    Ok(vec![
+        body["profile"].as_str().unwrap_or("default").to_string(),
+    ])
 }

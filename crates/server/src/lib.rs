@@ -18,7 +18,9 @@ use std::sync::Arc;
 
 use axum::Router;
 use mewcode_engine::memory::MemoryStore;
-use mewcode_protocol::routes::{CHAT, HEALTH, MEMORY_GET, MEMORY_POST, MODELS, SESSION_BY_ID, SESSIONS, STORAGE_STATUS};
+use mewcode_protocol::routes::{
+    CHAT, HEALTH, MEMORY_GET, MEMORY_POST, MODELS, SESSION_BY_ID, SESSIONS, STORAGE_STATUS,
+};
 use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -43,7 +45,11 @@ pub struct AppState {
 impl AppState {
     /// Construct a new state over the given session store and memory store.
     pub fn new(config: ServerConfig, store: Arc<dyn SessionStore>, memory: MemoryStore) -> Self {
-        Self { config, store, memory }
+        Self {
+            config,
+            store,
+            memory,
+        }
     }
 }
 
@@ -62,10 +68,7 @@ pub fn build_app(state: AppState) -> Router {
         )
         .route(CHAT, axum::routing::post(routes::chat::chat_stream))
         .route(STORAGE_STATUS, axum::routing::get(routes::storage::status))
-        .route(
-            MEMORY_GET,
-            axum::routing::get(routes::memory::get_memory),
-        )
+        .route(MEMORY_GET, axum::routing::get(routes::memory::get_memory))
         .route(
             MEMORY_POST,
             axum::routing::post(routes::memory::post_memory),

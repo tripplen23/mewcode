@@ -111,7 +111,11 @@ impl ProjectContext {
 
 /// Build the default tool registry: every read-only tool plus `use_skill`
 /// and, when a memory store is provided, `mewcode_memory`.
-pub fn default_registry(ctx: ProjectContext, skills: Skills, memory: Option<MemoryStore>) -> ToolRegistry {
+pub fn default_registry(
+    ctx: ProjectContext,
+    skills: Skills,
+    memory: Option<MemoryStore>,
+) -> ToolRegistry {
     let mut reg = ToolRegistry::new();
     reg.register(Arc::new(ReadFileTool::new(ctx.clone())));
     reg.register(Arc::new(ListDirectoryTool::new(ctx.clone())));

@@ -87,13 +87,13 @@ impl ToolContracts for MewcodeMemoryTool {
             .get("action")
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
-                ToolError::invalid_input(
-                    "missing `action`",
-                    "pass one of: read, write, list",
-                )
+                ToolError::invalid_input("missing `action`", "pass one of: read, write, list")
             })?;
 
-        let profile = input.get("profile").and_then(|v| v.as_str()).unwrap_or("default");
+        let profile = input
+            .get("profile")
+            .and_then(|v| v.as_str())
+            .unwrap_or("default");
 
         let store = if profile != "default" {
             // Derive data_dir from store path by going up two levels:
@@ -131,9 +131,9 @@ impl ToolContracts for MewcodeMemoryTool {
                         )
                     })?;
                 store.write(content).map_err(|e| {
-                    ToolError::Io(std::io::Error::other(
-                        format!("failed to write memory: {e}"),
-                    ))
+                    ToolError::Io(std::io::Error::other(format!(
+                        "failed to write memory: {e}"
+                    )))
                 })?;
                 Ok(ToolOutput(json!({
                     "profile": profile,
