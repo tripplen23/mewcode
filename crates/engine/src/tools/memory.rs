@@ -2,7 +2,7 @@
 //!
 //! The tool wraps a [`MemoryStore`] so the agent can inspect and update its
 //! own durable facts. The tool is *registered* in the tool registry but
-//! won't be executable until the tool-calling loop lands (Phase 11).
+//! won't be executable until the tool-calling loop lands.
 
 use async_trait::async_trait;
 use mewcode_protocol::tool::names;

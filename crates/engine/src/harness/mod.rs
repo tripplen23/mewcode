@@ -191,7 +191,7 @@ impl Harness {
             .unwrap_or(0);
         let history = self.history_strategy.build(&messages[..current_user_pos]);
 
-        // Build the system prompt, optionally injecting durable memory (Phase 9).
+        // Build the system prompt, optionally injecting durable memory.
         let mut system_prompt = build_system_prompt(self.mode, &self.skills, &self.tools);
         if let Some(memory_section) = self.memory.as_ref().and_then(|m| m.format()) {
             system_prompt.push_str("\n\n");
