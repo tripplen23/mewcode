@@ -8,6 +8,7 @@ This file tracks the build order agreed in the kickoff plan. Each phase ends wit
 [mastra-memory]: https://mastra.ai/docs/memory/overview
 [mastra-observational]: https://mastra.ai/docs/memory/observational-memory
 [mastra-message-history]: https://mastra.ai/docs/memory/message-history
+[hermes-memory]: https://github.com/NousResearch/hermes-agent
 
 ## Phase 1 — Workspace skeleton ✅
 - [x] Cargo workspace at `/home/binhfnef/Projects/personal/mew_code/mewcode`
@@ -114,53 +115,86 @@ registry.
 - [x] rig Anthropic-compat client for `https://opencode.ai/zen/go/v1/messages`
 - [x] First end-to-end smoke test
 
-## Phase 8 — Conversation history
+## Phase 8 — Conversation history + session resume
 - Fix the in-session history bug: `Harness::run_turn` currently sends only
   the latest user turn (`last_user_text` + `agent.prompt(text)`), so the model
-  has no context for follow-up questions
+  has no context for follow-up questions; this also means the agent on a
+  resumed session has zero context
 - Replace `Provider::invoke_agent(text)` with a history-aware call: map
   `&[mewcode_protocol::Message]` to `Vec<rig_core::message::Message>` and
   hand it to the agent via `with_history(...)` on `PromptRequest` /
   `StreamingPromptRequest`
+- Wrap the history-construction in a `HistoryStrategy` enum so future
+  memory modes slot in without breaking the call site:
+  ```rust
+  enum HistoryStrategy {
+      Raw { max_turns: usize },
+      // Summarized { max_tokens: u64 },     // observational memory (future)
+      // DurableFactInjected { ... },         // memory-scaffold mode (future)
+  }
+  ```
 - Token-aware window: keep the system prompt, keep recent N turns verbatim,
   summarise or drop older turns; start with a conservative N (e.g. 20) and
   tune per model
-- Tests: a multi-turn end-to-end against the harness, plus a property test
-  that the model receives every prior turn (no history dropped on the wire)
-- Rig has the primitive but no high-level memory abstraction; observational /
-  compaction memory (cf. [Mastra observational memory][mastra-observational])
-  is a separate later phase
-- Refs: [Mastra memory overview][mastra-memory], [Mastra message history][mastra-message-history]
+- Load history from `FsStore` when the client opens a session — the server
+  `/chat` endpoint already receives the full `&[Message]`, so the plumbing
+  is just: store → deserialize → attach to `ChatRequest`
+- Tests: a multi-turn end-to-end against the harness, a property test
+  that the model receives every prior turn, and a session-resume test that
+  verifies loaded history is passed to `with_history()`
+- Refs: [Mastra message history][mastra-message-history]
 
-## Phase 9 — Streaming
+Checkpoint: follow-up questions in a session have full context,
+session resume works, `HistoryStrategy` is wired with `Raw` mode,
+all tests pass.
+
+## Phase 9 — Durable memory scaffold
+- Design a simple fact store (one `.md` file per profile under
+  `~/.mewcode/memories/`) that holds durable user facts — the agent's
+  equivalent of the Hermes Agent MEMORY.md / USER.md system
+- Each memory file has a name and optional category; content is free-form
+  markdown the agent reads and writes
+- On harness creation, inject the active memory profile into the system
+  prompt as a `# Memory` section, so the agent sees its persistent facts
+  every turn
+- Add a tool `mewcode_memory` (read/write/list) so the agent can update
+  its own memory; the tool dispatches to the fact store on the server
+- Server endpoint: `GET/POST /memory` (read / write the active profile)
+- CLI stub: `mewcode memory [read|write|list]`
+- Wire the fact store into `HistoryStrategy` as a wrapper step:
+  durable facts are injected into the prompt preamble, not into the
+  conversation message list — they are context, not history
+- Ref: [Hermes Agent memory][hermes-memory]
+
+Checkpoint: agent sees durable facts every turn, can update them via tool,
+`mewcode memory list` shows the active profile, tests cover read/write/lifecycle.
+
+## Phase 10 — Streaming
 - Wire rig streaming completion into SSE on the server
 - Tokens stream live to the TUI
 
-## Phase 10 — First tool
+## Phase 11 — First tool
 - `read_file` as `#[rig::tool]`, exercised end-to-end with tracing span
 - Ref: [Anthropic tool guide][tool-guide]
 
-## Phase 11 — Remaining tools
+## Phase 12 — Remaining tools
 - `write_file`, `edit_file`, `list_dir`, `glob`, `grep`, `bash`
 - PLAN mode gate
 - Tracing span on every tool
 - Ref: [Anthropic tool guide][tool-guide]
 
-## Phase 12 — Skills runtime
+## Phase 13 — Skills runtime
 - Skill hot-reload: pick up new or changed `SKILL.md` files without restarting
 - Skill assets: bundle files alongside the body, exposed via `use_skill`
 - Lint `SKILL.md` frontmatter on load, surface errors at boot
 - More bundled sample skills (`explain-error`, `refactor-rust`)
 - Ref: [Anthropic Skills guide][skills-guide]
 
-## Phase 13 — TUI polish
+## Phase 14 — TUI polish
 - Markdown rendering (`tui-markdown`)
 - Code blocks with `syntect`
 - Tool cards, theme switcher, slash command menu, @-mention popover
 - Toast, trace pane, animations
-
-## Phase 14 — Session resume
-- Load history from the session store, replay into the agent
 
 ## Phase 15 — Config & persistence
 - `~/.config/mewcode/config.toml`
