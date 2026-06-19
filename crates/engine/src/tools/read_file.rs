@@ -39,7 +39,7 @@ impl ToolContracts for ReadFileTool {
                 "**When NOT to use:** Don't read files you have already read in this conversation. ",
                 "For large files (> 100k chars) the response is truncated — use `grep` first to ",
                 "find the relevant region, then `read_file` with a smaller `from_line`/`limit` scope ",
-                "once Phase 10 lands range selection. For binary files, this tool returns an error.\n\n",
+                "(range selection lands in a later phase). For binary files, this tool returns an error.\n\n",
                 "**Token efficiency:** The response is truncated to ~100k characters with a clear ",
                 "marker. To see a specific section, prefer a follow-up `grep` rather than reading ",
                 "the whole file again."
