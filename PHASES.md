@@ -180,7 +180,7 @@ Checkpoint: agent sees durable facts every turn, can update them via tool,
 - Wire the `ToolRegistry` (built via `default_registry`) into the Rig
   agent builder in `Provider::invoke_agent_streaming` — pass tools via
   `.tools(Vec<Box<dyn ToolDyn>>)`
-- Increase `MAX_AGENT_TURNS` from 1 to allow multi-turn tool-call →
+- Increase `MAX_AGENT_TURNS` from 1 to 10 to allow multi-turn tool-call →
   result → response cycles (Rig handles the loop internally)
 - Emit `StreamEvent::ToolInputAvailable` and `ToolOutputAvailable` from
   `stream_agent_completion` when the stream yields
@@ -191,14 +191,11 @@ Checkpoint: agent sees durable facts every turn, can update them via tool,
 - Also exercise `mewcode_memory` end-to-end: the model writes a fact,
   the adapter dispatches to `MewcodeMemoryTool::execute`, the fact
   persists to `memories/default.md`
-- Tracing: record tool calls on the `chat-turn` span so Langfuse shows
-  tool-call observations alongside the generation
 - Ref: [Anthropic tool guide][tool-guide]
 
 Checkpoint: the agent can call `read_file` and `mewcode_memory` during
 a chat turn, the TUI sees `ToolInputAvailable`/`ToolOutputAvailable`
-events, Langfuse traces show tool-call observations, and all existing
-tests still pass.
+events, and all existing tests still pass.
 
 ## Phase 12 — Remaining tools + PLAN mode gate
 - `write_file`, `edit_file`, `list_dir`, `glob`, `grep`, `bash` as

@@ -56,8 +56,25 @@ impl ToolDyn for RigToolAdapter {
     ) -> WasmBoxedFuture<'a, Result<String, rig_core::tool::ToolError>> {
         let inner = self.inner.clone();
         Box::pin(async move {
-            let input: serde_json::Value =
-                serde_json::from_str(&args).unwrap_or(serde_json::Value::Null);
+            let input: serde_json::Value = match serde_json::from_str(&args) {
+                Ok(v) => v,
+                Err(e) => {
+                    // Return an explicit error payload so the model can
+                    // correct its tool call instead of getting a confusing
+                    // "missing field" message from a silent null.
+                    let payload = mewcode_protocol::ToolErrorPayload {
+                        error: true,
+                        kind: "invalid_input".into(),
+                        message: format!("invalid JSON arguments: {e}"),
+                        hint: Some("check that the arguments are valid JSON".into()),
+                        retryable: true,
+                    };
+                    return Ok(serde_json::to_string(&payload).unwrap_or_else(|_| {
+                        r#"{"error":true,"kind":"invalid_input","message":"invalid JSON"}"#
+                            .to_string()
+                    }));
+                }
+            };
             match inner.execute(input).await {
                 Ok(output) => {
                     // Rig expects a string that the provider sends back as
@@ -66,9 +83,10 @@ impl ToolDyn for RigToolAdapter {
                     Ok(output.0.to_string())
                 }
                 Err(e) => {
-                    // Convert mewcode ToolError into Rig's ToolError. We
-                    // serialise the error payload so the model sees the
-                    // hint and can retry with corrected input.
+                    // Serialise the error payload as a successful Ok(String)
+                    // so Rig sends it back to the model as the tool result.
+                    // The model sees the error kind + hint and can retry
+                    // with corrected input.
                     let payload: mewcode_protocol::ToolErrorPayload = (&e).into();
                     Ok(serde_json::to_string(&payload).unwrap_or_else(|_| {
                         r#"{"error":true,"kind":"other","message":"tool failed"}"#.to_string()
@@ -82,10 +100,11 @@ impl ToolDyn for RigToolAdapter {
 /// Convert a [`ToolRegistry`](crate::tools::ToolRegistry) into the
 /// `Vec<Box<dyn ToolDyn>>` that Rig's agent builder expects.
 pub fn rig_tools(registry: &crate::tools::ToolRegistry) -> Vec<Box<dyn ToolDyn>> {
-    registry
-        .descriptors()
-        .iter()
-        .map(|d| d.name.as_str())
+    let descriptors = registry.descriptors();
+    let mut names: Vec<&str> = descriptors.iter().map(|d| d.name.as_str()).collect();
+    names.sort();
+    names
+        .into_iter()
         .filter_map(|name| registry.get_by_name(name))
         .map(|tool| Box::new(RigToolAdapter::new(tool)) as Box<dyn ToolDyn>)
         .collect()

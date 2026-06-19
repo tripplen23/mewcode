@@ -39,7 +39,7 @@ fn fresh_project() -> std::path::PathBuf {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .subsec_nanos()
+            .as_nanos()
     ));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("src")).unwrap();
@@ -115,6 +115,7 @@ async fn adapter_definition_matches_descriptor() {
     let def = adapter.definition(String::new()).await;
     assert_eq!(def.name, descriptor.name);
     assert_eq!(def.parameters, descriptor.input_schema);
+    assert_eq!(def.description, descriptor.description);
     assert!(!def.description.is_empty());
 }
 
@@ -158,4 +159,30 @@ async fn adapter_call_with_invalid_args_returns_error_payload() {
         serde_json::from_str(&result).expect("error should be valid JSON");
     assert_eq!(parsed["error"], true);
     assert_eq!(parsed["kind"], "invalid_input");
+}
+
+#[tokio::test]
+async fn adapter_call_with_malformed_json_returns_error_payload() {
+    let data_dir = fresh_data_dir();
+    let store = MemoryStore::new(data_dir);
+    let tool = Arc::new(MewcodeMemoryTool::new(store)) as Arc<dyn ToolContracts>;
+    let adapter = RigToolAdapter::new(tool);
+
+    // Not valid JSON at all
+    let result = adapter
+        .call("not json at all".to_string())
+        .await
+        .expect("adapter should not panic on malformed JSON");
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&result).expect("error should be valid JSON");
+    assert_eq!(parsed["error"], true);
+    assert_eq!(parsed["kind"], "invalid_input");
+    assert!(
+        parsed["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("invalid JSON"),
+        "error message should mention invalid JSON"
+    );
 }
