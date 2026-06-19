@@ -100,7 +100,8 @@ impl Provider {
     }
 
     /// Like [`invoke_agent`] but streams `TextDelta` events as text chunks
-    /// arrive, emitting them through `tx`.
+    /// arrive, emitting them through `tx`. Tools are passed to the Rig
+    /// agent builder so the model can call them during multi-turn loops.
     pub async fn invoke_agent_streaming(
         &self,
         req: AgentRequest<'_>,
@@ -115,6 +116,7 @@ impl Provider {
                     .preamble(&req.system_prompt)
                     .max_tokens(req.max_tokens)
                     .default_max_turns(req.max_turns)
+                    .tools(req.tools)
                     .build();
                 stream_agent_completion(agent, req.user_text, req.history, tx).await
             }
@@ -126,6 +128,7 @@ impl Provider {
                     .preamble(&req.system_prompt)
                     .max_tokens(req.max_tokens)
                     .default_max_turns(req.max_turns)
+                    .tools(req.tools)
                     .build();
                 stream_agent_completion(agent, req.user_text, req.history, tx).await
             }
@@ -149,9 +152,15 @@ pub struct AgentRequest<'a> {
     pub max_tokens: u64,
     /// Cap on agent-internal turns before stopping.
     pub max_turns: usize,
+    /// Tools the agent can call during the turn (Rig `ToolDyn` wrappers).
+    pub tools: Vec<Box<dyn rig_core::tool::ToolDyn>>,
 }
 
 /// Generic streaming helper for any Rig `Agent` with the default hook (`()`).
+///
+/// Emits `TextDelta` for text chunks, `ToolInputAvailable` when the model
+/// requests a tool call, and `ToolOutputAvailable` when the tool result is
+/// fed back. The multi-turn loop is handled by Rig internally.
 async fn stream_agent_completion<M: rig_core::completion::CompletionModel + 'static>(
     agent: rig_core::agent::Agent<M, ()>,
     user_text: String,
@@ -171,6 +180,52 @@ async fn stream_agent_completion<M: rig_core::completion::CompletionModel + 'sta
                     })
                     .await;
                 full_reply.push_str(&delta);
+            }
+            Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::ToolCall {
+                tool_call,
+                ..
+            })) => {
+                let _ = tx
+                    .send(StreamEvent::ToolInputAvailable {
+                        tool_call_id: tool_call.id.clone(),
+                        tool_name: tool_call.function.name.clone(),
+                        input: tool_call.function.arguments.clone(),
+                    })
+                    .await;
+            }
+            Ok(MultiTurnStreamItem::StreamUserItem(user_content)) => {
+                // StreamedUserContent has a single variant (ToolResult), so
+                // we destructure directly.
+                let rig_core::streaming::StreamedUserContent::ToolResult { tool_result, .. } =
+                    user_content;
+                let output = tool_result
+                    .content
+                    .iter()
+                    .find_map(|c| match c {
+                        rig_core::completion::message::ToolResultContent::Text(t) => {
+                            Some(t.text.clone())
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                let parsed = serde_json::from_str::<serde_json::Value>(&output)
+                    .unwrap_or(serde_json::Value::String(output));
+                let _ = tx
+                    .send(StreamEvent::ToolOutputAvailable {
+                        tool_call_id: tool_result.id,
+                        output: parsed,
+                    })
+                    .await;
+            }
+            Ok(MultiTurnStreamItem::CompletionCall(call)) => {
+                // Record usage on the current tracing span if available.
+                if let Some(usage) = &call.usage {
+                    tracing::debug!(
+                        input_tokens = usage.input_tokens,
+                        output_tokens = usage.output_tokens,
+                        "completion call usage"
+                    );
+                }
             }
             Ok(MultiTurnStreamItem::FinalResponse(response)) => {
                 if full_reply.is_empty() {

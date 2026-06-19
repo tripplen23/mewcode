@@ -25,12 +25,14 @@ mod glob;
 mod list_directory;
 mod memory;
 mod read_file;
+mod rig_adapter;
 mod use_skill;
 
 pub use glob::GlobTool;
 pub use list_directory::ListDirectoryTool;
 pub use memory::MewcodeMemoryTool;
 pub use read_file::ReadFileTool;
+pub use rig_adapter::{RigToolAdapter, rig_tools};
 pub use use_skill::UseSkillTool;
 
 /// Engine-local alias for the shared skill registry. We keep the

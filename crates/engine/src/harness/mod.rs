@@ -243,6 +243,7 @@ impl Harness {
         user_text: String,
         tx: &mpsc::Sender<StreamEvent>,
     ) -> Result<String, EngineError> {
+        let tools = crate::tools::rig_tools(&self.tools);
         provider
             .invoke_agent_streaming(
                 AgentRequest {
@@ -252,6 +253,7 @@ impl Harness {
                     user_text,
                     max_tokens: Self::MAX_TOKENS,
                     max_turns: Self::MAX_AGENT_TURNS,
+                    tools,
                 },
                 tx,
             )
@@ -261,10 +263,11 @@ impl Harness {
     /// Output token cap for a single turn.
     const MAX_TOKENS: u64 = 4096;
 
-    /// Max internal Rig agent turns. No tools are registered yet, so this is a
-    /// no-op today; keeping it explicit prevents the next phase from having to
-    /// rediscover where multi-turn depth belongs.
-    const MAX_AGENT_TURNS: usize = 1;
+    /// Max internal Rig agent turns. With tools registered, the agent needs
+    /// multiple turns: call tool → receive result → produce final reply.
+    /// 10 is generous enough for a few tool calls per turn without runaway
+    /// loops.
+    const MAX_AGENT_TURNS: usize = 10;
 
     /// Emit the success-path event sequence for one turn: exactly one `Start`
     /// carrying this turn's mode and model, then a single `TextDelta` (omitted
