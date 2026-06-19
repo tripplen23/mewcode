@@ -52,6 +52,7 @@ impl Provider {
     /// keeps the harness ready for the next phase: tools, skills, and streaming
     /// can attach to the agent builder/request instead of a low-level completion
     /// request.
+    #[allow(clippy::too_many_arguments)]
     pub async fn invoke_agent(
         &self,
         model_id: &str,
@@ -102,42 +103,56 @@ impl Provider {
     /// arrive, emitting them through `tx`.
     pub async fn invoke_agent_streaming(
         &self,
-        model_id: &str,
-        system_prompt: String,
-        history: Vec<rig_core::completion::Message>,
-        user_text: String,
-        max_tokens: u64,
-        max_turns: usize,
+        req: AgentRequest<'_>,
         tx: &mpsc::Sender<StreamEvent>,
     ) -> Result<String, EngineError> {
         match self {
             Provider::Anthropic(p) => {
                 let agent = p
                     .client()
-                    .agent(model_id)
+                    .agent(req.model_id)
                     .name("mewcode")
-                    .preamble(&system_prompt)
-                    .max_tokens(max_tokens)
-                    .default_max_turns(max_turns)
+                    .preamble(&req.system_prompt)
+                    .max_tokens(req.max_tokens)
+                    .default_max_turns(req.max_turns)
                     .build();
-                stream_agent_completion(agent, user_text, history, tx).await
+                stream_agent_completion(agent, req.user_text, req.history, tx).await
             }
             Provider::OpenAi(p) => {
                 let agent = p
                     .client()
-                    .agent(model_id)
+                    .agent(req.model_id)
                     .name("mewcode")
-                    .preamble(&system_prompt)
-                    .max_tokens(max_tokens)
-                    .default_max_turns(max_turns)
+                    .preamble(&req.system_prompt)
+                    .max_tokens(req.max_tokens)
+                    .default_max_turns(req.max_turns)
                     .build();
-                stream_agent_completion(agent, user_text, history, tx).await
+                stream_agent_completion(agent, req.user_text, req.history, tx).await
             }
         }
     }
 }
 
+/// Inputs to [`Provider::invoke_agent`] / [`Provider::invoke_agent_streaming`].
+/// Bundled into a struct to keep argument counts below clippy's threshold
+/// and to make call-sites self-documenting.
+pub struct AgentRequest<'a> {
+    /// Model identifier (e.g. `"claude-sonnet-4"`).
+    pub model_id: &'a str,
+    /// System prompt prepended to the conversation.
+    pub system_prompt: String,
+    /// Prior conversation history (oldest → newest).
+    pub history: Vec<rig_core::completion::Message>,
+    /// The current user message.
+    pub user_text: String,
+    /// Cap on completion tokens per turn.
+    pub max_tokens: u64,
+    /// Cap on agent-internal turns before stopping.
+    pub max_turns: usize,
+}
+
 /// Generic streaming helper for any Rig `Agent` with the default hook (`()`).
+#[allow(clippy::too_many_arguments)]
 async fn stream_agent_completion<M: rig_core::completion::CompletionModel + 'static>(
     agent: rig_core::agent::Agent<M, ()>,
     user_text: String,

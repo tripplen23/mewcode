@@ -20,7 +20,7 @@ use crate::config::EngineConfig;
 use crate::error::EngineError;
 use crate::history::HistoryStrategy;
 use crate::memory::MemoryStore;
-use crate::provider::Provider;
+use crate::provider::{AgentRequest, Provider};
 use crate::skills::SkillRegistry;
 use crate::tools::ToolRegistry;
 use crate::trace;
@@ -245,12 +245,14 @@ impl Harness {
     ) -> Result<String, EngineError> {
         provider
             .invoke_agent_streaming(
-                self.model.provider_id(),
-                system_prompt,
-                history,
-                user_text,
-                Self::MAX_TOKENS,
-                Self::MAX_AGENT_TURNS,
+                AgentRequest {
+                    model_id: self.model.provider_id(),
+                    system_prompt,
+                    history,
+                    user_text,
+                    max_tokens: Self::MAX_TOKENS,
+                    max_turns: Self::MAX_AGENT_TURNS,
+                },
                 tx,
             )
             .await

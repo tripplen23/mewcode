@@ -9,6 +9,7 @@ use axum::extract::State;
 use serde::{Deserialize, Serialize};
 
 use crate::AppState;
+use crate::error::AppError;
 
 /// `GET /memory` — return the current memory content.
 #[derive(Serialize)]
@@ -39,13 +40,14 @@ pub async fn get_memory(State(state): State<AppState>) -> Json<MemoryResponse> {
 pub async fn post_memory(
     State(state): State<AppState>,
     Json(req): Json<MemoryWriteRequest>,
-) -> Json<MemoryResponse> {
-    if let Err(e) = state.memory.write(&req.content) {
-        tracing::warn!(error = %e, "failed to write memory");
-    }
+) -> Result<Json<MemoryResponse>, AppError> {
+    state
+        .memory
+        .write(&req.content)
+        .map_err(|e| AppError::Internal(format!("failed to write memory: {e}")))?;
     let content = state.memory.read();
-    Json(MemoryResponse {
+    Ok(Json(MemoryResponse {
         profile: "default".to_string(),
         content,
-    })
+    }))
 }

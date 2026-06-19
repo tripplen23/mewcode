@@ -63,7 +63,9 @@ impl ToolContracts for MewcodeMemoryTool {
                 "required": ["action"],
                 "additionalProperties": false,
             }),
-            annotations: ToolAnnotations::READ_ONLY_IDEMPOTENT,
+            // `write` mutates a file under `memories/`, so this is a
+            // local writer — not read-only, not idempotent (overwrites).
+            annotations: ToolAnnotations::WRITE_LOCAL,
             examples: vec![
                 ToolExample {
                     description: "Read the active memory profile.".to_string(),
@@ -94,6 +96,21 @@ impl ToolContracts for MewcodeMemoryTool {
             .get("profile")
             .and_then(|v| v.as_str())
             .unwrap_or("default");
+
+        // Profile names become file paths under `memories/`, so they must
+        // be simple identifiers — reject anything that could escape the
+        // directory via path separators or `..` segments.
+        if profile.is_empty()
+            || profile.contains('/')
+            || profile.contains('\\')
+            || profile.contains("..")
+            || profile.starts_with('.')
+        {
+            return Err(ToolError::invalid_input(
+                format!("invalid profile name: {profile:?}"),
+                "use a simple identifier like 'default' or 'work'",
+            ));
+        }
 
         let store = if profile != "default" {
             // Derive data_dir from store path by going up two levels:
@@ -150,7 +167,10 @@ impl ToolContracts for MewcodeMemoryTool {
                         if let Ok(entries) = std::fs::read_dir(&memories_dir) {
                             for entry in entries.flatten() {
                                 let path = entry.path();
-                                if path.extension().is_some_and(|e| e == "md") {
+                                if path
+                                    .extension()
+                                    .is_some_and(|e| e == std::ffi::OsStr::new("md"))
+                                {
                                     if let Some(stem) = path.file_stem() {
                                         names.push(stem.to_string_lossy().to_string());
                                     }

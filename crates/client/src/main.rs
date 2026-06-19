@@ -125,9 +125,14 @@ fn main() -> anyhow::Result<()> {
 async fn read_memory() -> Result<String, anyhow::Error> {
     let config = ClientConfig::load()?;
     let url = format!("{}/memory", config.api_url);
-    let resp = reqwest::get(&url).await?;
-    let body: serde_json::Value = resp.json().await?;
-    Ok(body["content"].as_str().unwrap_or_default().to_string())
+    let resp = reqwest::Client::new()
+        .get(&url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<serde_json::Value>()
+        .await?;
+    Ok(resp["content"].as_str().unwrap_or_default().to_string())
 }
 
 /// Write memory via the server.
@@ -139,7 +144,8 @@ async fn write_memory(content: &str) -> Result<(), anyhow::Error> {
         .post(&url)
         .json(&serde_json::json!({ "content": content }))
         .send()
-        .await?;
+        .await?
+        .error_for_status()?;
     Ok(())
 }
 
@@ -149,9 +155,14 @@ async fn list_profiles() -> Result<Vec<String>, anyhow::Error> {
     // A future RPC can return available profiles once the server supports it.
     let config = ClientConfig::load()?;
     let url = format!("{}/memory", config.api_url);
-    let resp = reqwest::get(&url).await?;
-    let body: serde_json::Value = resp.json().await?;
+    let resp = reqwest::Client::new()
+        .get(&url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<serde_json::Value>()
+        .await?;
     Ok(vec![
-        body["profile"].as_str().unwrap_or("default").to_string(),
+        resp["profile"].as_str().unwrap_or("default").to_string(),
     ])
 }
