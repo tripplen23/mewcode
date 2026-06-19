@@ -9,7 +9,7 @@ pub use self::completion::last_user_text;
 
 use std::sync::Arc;
 
-use mewcode_protocol::{Message, Mode, ModelId, StreamEvent};
+use mewcode_protocol::{Message, Mode, ModelId, Role, StreamEvent};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
@@ -178,10 +178,19 @@ impl Harness {
         let user_text = last_user_text(messages)
             .ok_or_else(|| EngineError::Other("no user message in chat history".to_string()))?;
 
-        // Build the conversation history: window and map messages.
-        let history = self.history_strategy.build(messages);
+        // Build history from messages before the current user prompt, so
+        // the prompt text is not duplicated when invoke_agent sends it
+        // via `.prompt(user_text).with_history(history)`.
+        let current_user_pos = messages
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, m)| m.role == Role::User)
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+        let history = self.history_strategy.build(&messages[..current_user_pos]);
 
-        // Build the system prompt, optionally injecting durable memory.
+        // Build the system prompt, optionally injecting durable memory (Phase 9).
         let mut system_prompt = build_system_prompt(self.mode, &self.skills, &self.tools);
         if let Some(memory_section) = self.memory.as_ref().and_then(|m| m.format()) {
             system_prompt.push_str("\n\n");

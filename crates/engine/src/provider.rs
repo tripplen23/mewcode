@@ -39,14 +39,14 @@ impl Provider {
         Ok(provider)
     }
 
-    /// Build and invoke a Rig agent for one user prompt.
+    /// Build and invoke a Rig agent for one user prompt, with conversation
+    /// history so follow-up questions have context.
     ///
     /// The two provider arms stay explicit because they use different OpenCode
     /// Go wire protocols, but both go through Rig's `Agent` abstraction. That
     /// keeps the harness ready for the next phase: tools, skills, and streaming
     /// can attach to the agent builder/request instead of a low-level completion
-    /// Build and invoke a Rig agent for one user prompt, with conversation
-    /// history so follow-up questions have context.
+    /// request.
     pub async fn invoke_agent(
         &self,
         model_id: &str,

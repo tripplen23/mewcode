@@ -48,7 +48,9 @@ fn default_profile_path_is_correct() {
     assert_eq!(store.path(), &expected);
 }
 
-/// Create a temporary directory that gets cleaned up on drop.
+/// Create a unique temporary directory path for each test call.
+/// The directory is created lazily on first write by MemoryStore and
+/// left for OS temp cleanup.
 fn tempdir() -> PathBuf {
     let p = std::env::temp_dir().join(format!("mew-mem-test-{}", uuid::Uuid::new_v4()));
     let _ = std::fs::remove_dir_all(&p);
