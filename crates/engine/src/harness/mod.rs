@@ -5,22 +5,23 @@
 
 mod completion;
 
-pub use self::completion::{last_user_text, reply_text};
+pub use self::completion::last_user_text;
 
 use std::sync::Arc;
 
 use mewcode_protocol::{Message, Mode, ModelId, StreamEvent};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 use uuid::Uuid;
 
 use crate::agent::build_system_prompt;
 use crate::config::EngineConfig;
 use crate::error::EngineError;
-use crate::langfuse::{LangfuseTracer, TurnReport};
 use crate::provider::Provider;
 use crate::skills::SkillRegistry;
 use crate::tools::ToolRegistry;
+use crate::trace;
 
 /// The agent harness.
 #[derive(Clone)]
@@ -30,7 +31,6 @@ pub struct Harness {
     cancel: CancellationToken,
     skills: Arc<SkillRegistry>,
     tools: Arc<ToolRegistry>,
-    tracer: Option<Arc<LangfuseTracer>>,
     session_id: Option<Uuid>,
 }
 
@@ -60,16 +60,8 @@ impl Harness {
             cancel: CancellationToken::new(),
             skills,
             tools,
-            tracer: None,
             session_id: None,
         }
-    }
-
-    /// Attach an optional Langfuse tracer. Passing `None` (or never calling
-    /// this) leaves tracing disabled.
-    pub fn with_tracer(mut self, tracer: Option<Arc<LangfuseTracer>>) -> Self {
-        self.tracer = tracer;
-        self
     }
 
     /// Record the chat session id so reported turns are grouped by session in Langfuse.
@@ -98,7 +90,7 @@ impl Harness {
         self.tools.names()
     }
 
-    /// Run one completion against OpenCode Go and stream the reply as
+    /// Invoke the configured Rig agent once and stream the reply as
     /// `Start` → `TextDelta`* → `Finish`. Returns `Err` on any failure and
     /// emits nothing on that path — the caller owns the `Error` event.
     pub async fn run_turn(
@@ -106,14 +98,54 @@ impl Harness {
         messages: &[Message],
         tx: mpsc::Sender<StreamEvent>,
     ) -> Result<(), EngineError> {
-        let start = chrono::Utc::now();
-        let result = self.run_turn_inner(messages, &tx).await;
-        self.trace_turn(messages, &result, start);
-        result.map(|_| ())
+        let span = self.chat_turn_span();
+        if let Some(session_id) = self.session_id {
+            span.record("langfuse.session.id", session_id.to_string());
+        }
+
+        self.run_turn_inner(messages, &tx)
+            .instrument(span)
+            .await
+            .map(|_| ())
+    }
+
+    /// Create the [`tracing::Span`] for one agent turn. Exposed as `pub`
+    /// only for the tracing-instrumentation unit test in
+    /// `crates/engine/tests/chat_turn_span.rs`.
+    pub fn chat_turn_span(&self) -> tracing::Span {
+        tracing::info_span!(
+            "chat-turn",
+            gen_ai.operation.name = trace::GEN_AI_OP_INVOKE_AGENT,
+            gen_ai.agent.name = trace::GEN_AI_AGENT_MEWCODE,
+            gen_ai.provider.name = trace::GEN_AI_PROVIDER_OPENCODE_GO,
+            gen_ai.request.model = self.model.provider_id(),
+            gen_ai.request.max_tokens = Self::MAX_TOKENS,
+            gen_ai.system_instructions = tracing::field::Empty,
+            gen_ai.prompt = tracing::field::Empty,
+            gen_ai.completion = tracing::field::Empty,
+            gen_ai.response.id = tracing::field::Empty,
+            gen_ai.response.model = tracing::field::Empty,
+            gen_ai.usage.input_tokens = tracing::field::Empty,
+            gen_ai.usage.output_tokens = tracing::field::Empty,
+            gen_ai.usage.cache_read.input_tokens = tracing::field::Empty,
+            gen_ai.usage.cache_creation.input_tokens = tracing::field::Empty,
+            gen_ai.usage.tool_use_prompt_tokens = tracing::field::Empty,
+            gen_ai.usage.reasoning_tokens = tracing::field::Empty,
+            mewcode.mode = ?self.mode,
+            langfuse.trace.name = trace::TRACE_NAME_CHAT_TURN,
+            langfuse.session.id = tracing::field::Empty,
+            langfuse.trace.input = tracing::field::Empty,
+            langfuse.trace.output = tracing::field::Empty,
+            langfuse.observation.type = trace::LANGFUSE_OBSERVATION_GENERATION,
+            langfuse.observation.input = tracing::field::Empty,
+            langfuse.observation.output = tracing::field::Empty,
+            input.value = tracing::field::Empty,
+            output.value = tracing::field::Empty,
+        )
     }
 
     /// The turn proper: resolve config, select the user message, run one
-    /// completion, and emit the success-path events. Returns the assistant
+    /// agent invocation, and emit the success-path events. Returns the assistant
     /// reply on success so the caller can both report it and discard it. The
     /// SSE emission is unchanged — nothing reaches the channel on failure, so
     /// the server route stays the single owner of the `Error` event.
@@ -133,66 +165,48 @@ impl Harness {
 
         let provider = Provider::for_model(self.model, &cfg.api_key, &cfg.base_url)?;
         let system_prompt = build_system_prompt(self.mode, &self.skills, &self.tools);
+        Self::record_turn_input(&tracing::Span::current(), &system_prompt, &user_text);
 
-        // Exactly one completion, no tool dispatch, no follow-up turn.
-        let reply = self.complete(provider, system_prompt, user_text).await?;
+        // Exactly one agent invocation. Tool wiring comes next; keeping the
+        // call behind `invoke_agent` means streaming can reuse the same agent
+        // construction path rather than a direct completion request.
+        let reply = self
+            .invoke_agent(provider, system_prompt, user_text)
+            .await?;
+        Self::record_turn_output(&tracing::Span::current(), &reply);
 
-        // Only on success do we emit anything, so a failed completion leaves the
+        // Only on success do we emit anything, so a failed agent turn leaves the
         // channel untouched for the caller's single `Error` event.
         self.emit_reply(&reply, tx).await?;
         Ok(reply)
     }
 
-    /// Fire-and-forget the turn's outcome to Langfuse when a tracer is
-    /// configured. Reporting runs on its own task and never affects the turn's
-    /// result or the SSE stream.
-    fn trace_turn(
-        &self,
-        messages: &[Message],
-        result: &Result<String, EngineError>,
-        start: chrono::DateTime<chrono::Utc>,
-    ) {
-        let Some(tracer) = &self.tracer else {
-            return;
-        };
-        let report = TurnReport {
-            session_id: self.session_id.map(|id| id.to_string()),
-            model: self.model.provider_id().to_string(),
-            mode: format!("{:?}", self.mode),
-            input: last_user_text(messages).unwrap_or_default(),
-            outcome: match result {
-                Ok(reply) => Ok(reply.clone()),
-                Err(e) => Err(e.to_string()),
-            },
-            start,
-            end: chrono::Utc::now(),
-        };
-        let tracer = tracer.clone();
-        tokio::spawn(async move { tracer.report_turn(report).await });
-    }
-
-    /// Run exactly one completion through the routed provider and fold its text
-    /// segments into one reply string. Kept off the emission path so `run_turn`
-    /// emits nothing until a reply exists.
-    async fn complete(
+    /// Run exactly one prompt through the routed Rig agent. Kept off the
+    /// emission path so `run_turn` emits nothing until a reply exists.
+    async fn invoke_agent(
         &self,
         provider: Provider,
         system_prompt: String,
         user_text: String,
     ) -> Result<String, EngineError> {
-        let choice = provider
-            .complete(
+        provider
+            .invoke_agent(
                 self.model.provider_id(),
                 system_prompt,
                 user_text,
                 Self::MAX_TOKENS,
+                Self::MAX_AGENT_TURNS,
             )
-            .await?;
-        Ok(reply_text(&choice))
+            .await
     }
 
     /// Output token cap for a single turn.
     const MAX_TOKENS: u64 = 4096;
+
+    /// Max internal Rig agent turns. No tools are registered yet, so this is a
+    /// no-op today; keeping it explicit prevents the next phase from having to
+    /// rediscover where multi-turn depth belongs.
+    const MAX_AGENT_TURNS: usize = 1;
 
     /// Emit the success-path event sequence for one turn: exactly one `Start`
     /// carrying this turn's mode and model, then a single `TextDelta` (omitted
@@ -230,5 +244,34 @@ impl Harness {
         .map_err(|e| EngineError::Other(e.to_string()))?;
 
         Ok(())
+    }
+
+    /// Record the turn's input on the current span. Exposed as `pub` for the
+    /// tracing-instrumentation unit test.
+    pub fn record_turn_input(span: &tracing::Span, system_prompt: &str, user_text: &str) {
+        span.record(trace::FIELD_GEN_AI_SYSTEM_INSTRUCTIONS, system_prompt);
+        span.record(trace::FIELD_GEN_AI_PROMPT, user_text);
+        span.record(trace::FIELD_LANGFUSE_TRACE_INPUT, user_text);
+        span.record(trace::FIELD_INPUT_VALUE, user_text);
+
+        let input = serde_json::json!({
+            "role": trace::GEN_AI_ROLE_USER,
+            "content": user_text,
+        });
+        span.record(trace::FIELD_LANGFUSE_OBSERVATION_INPUT, input.to_string());
+    }
+
+    /// Record the turn's output on the current span. Exposed as `pub` for the
+    /// tracing-instrumentation unit test.
+    pub fn record_turn_output(span: &tracing::Span, reply: &str) {
+        span.record(trace::FIELD_GEN_AI_COMPLETION, reply);
+        span.record(trace::FIELD_LANGFUSE_TRACE_OUTPUT, reply);
+        span.record(trace::FIELD_OUTPUT_VALUE, reply);
+
+        let output = serde_json::json!({
+            "role": trace::GEN_AI_ROLE_ASSISTANT,
+            "content": reply,
+        });
+        span.record(trace::FIELD_LANGFUSE_OBSERVATION_OUTPUT, output.to_string());
     }
 }

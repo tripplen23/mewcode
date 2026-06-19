@@ -45,9 +45,7 @@ pub async fn chat_stream(
     // The tool registry is empty for now
     let tools = Arc::new(ToolRegistry::new());
 
-    let harness = Harness::new(req.model, req.mode, skills, tools)
-        .with_tracer(state.tracer.clone())
-        .with_session(req.session_id);
+    let harness = Harness::new(req.model, req.mode, skills, tools).with_session(req.session_id);
 
     // The client sends the full history each turn; the new user message should
     // be the last entry. Filter by role so a malformed trailing assistant/tool

@@ -35,26 +35,12 @@ pub struct AppState {
     pub config: ServerConfig,
     /// Session store backend (filesystem in production, in-memory in tests).
     pub store: Arc<dyn SessionStore>,
-    /// Optional Langfuse tracer
-    pub tracer: Option<Arc<mewcode_engine::LangfuseTracer>>,
 }
 
 impl AppState {
-    /// Construct a new state over the given session store. Tracing is disabled
-    /// by default; call [`AppState::with_tracer`] to enable Langfuse.
+    /// Construct a new state over the given session store.
     pub fn new(config: ServerConfig, store: Arc<dyn SessionStore>) -> Self {
-        Self {
-            config,
-            store,
-            tracer: None,
-        }
-    }
-
-    /// Attach an optional Langfuse tracer (built from the environment by the
-    /// binary). Passing `None` leaves tracing disabled.
-    pub fn with_tracer(mut self, tracer: Option<Arc<mewcode_engine::LangfuseTracer>>) -> Self {
-        self.tracer = tracer;
-        self
+        Self { config, store }
     }
 }
 
