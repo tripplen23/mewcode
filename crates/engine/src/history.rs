@@ -86,7 +86,7 @@ fn map_message(msg: &MewMessage) -> RigMessage {
         mewcode_protocol::Role::Tool => {
             // Tool-result messages are dropped from the history window for now;
             // they will be reconstructed from the assistant's tool-call metadata
-            // once tool calling lands in Phase 10.
+            // once tool calling lands later.
             RigMessage::User {
                 content: OneOrMany::one(UserContent::Text(Text {
                     text: String::new(),

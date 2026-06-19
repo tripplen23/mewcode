@@ -178,10 +178,10 @@ impl Harness {
         let user_text = last_user_text(messages)
             .ok_or_else(|| EngineError::Other("no user message in chat history".to_string()))?;
 
-        // Build the conversation history (Phase 8): window and map messages.
+        // Build the conversation history: window and map messages.
         let history = self.history_strategy.build(messages);
 
-        // Build the system prompt, optionally injecting durable memory (Phase 9).
+        // Build the system prompt, optionally injecting durable memory.
         let mut system_prompt = build_system_prompt(self.mode, &self.skills, &self.tools);
         if let Some(memory_section) = self.memory.as_ref().and_then(|m| m.format()) {
             system_prompt.push_str("\n\n");
