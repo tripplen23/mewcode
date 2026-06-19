@@ -115,7 +115,7 @@ registry.
 - [x] rig Anthropic-compat client for `https://opencode.ai/zen/go/v1/messages`
 - [x] First end-to-end smoke test
 
-## Phase 8 — Conversation history + session resume
+## Phase 8 — Conversation history + session resume ✅
 - Fix the in-session history bug: `Harness::run_turn` currently sends only
   the latest user turn (`last_user_text` + `agent.prompt(text)`), so the model
   has no context for follow-up questions; this also means the agent on a
@@ -148,20 +148,20 @@ Checkpoint: follow-up questions in a session have full context,
 session resume works, `HistoryStrategy` is wired with `Raw` mode,
 all tests pass.
 
-## Phase 9 — Durable memory scaffold
-- Design a simple fact store (one `.md` file per profile under
+## Phase 9 — Durable memory scaffold ✅
+- [x] Design a simple fact store (one `.md` file per profile under
   `~/.mewcode/memories/`) that holds durable user facts — the agent's
   equivalent of the Hermes Agent MEMORY.md / USER.md system
-- Each memory file has a name and optional category; content is free-form
+- [x] Each memory file has a name and optional category; content is free-form
   markdown the agent reads and writes
-- On harness creation, inject the active memory profile into the system
+- [x] On harness creation, inject the active memory profile into the system
   prompt as a `# Memory` section, so the agent sees its persistent facts
   every turn
-- Add a tool `mewcode_memory` (read/write/list) so the agent can update
+- [x] Add a tool `mewcode_memory` (read/write/list) so the agent can update
   its own memory; the tool dispatches to the fact store on the server
-- Server endpoint: `GET/POST /memory` (read / write the active profile)
-- CLI stub: `mewcode memory [read|write|list]`
-- Wire the fact store into `HistoryStrategy` as a wrapper step:
+- [x] Server endpoint: `GET/POST /memory` (read / write the active profile)
+- [x] CLI stub: `mewcode memory [read|write|list]`
+- [x] Wire the fact store into `HistoryStrategy` as a wrapper step:
   durable facts are injected into the prompt preamble, not into the
   conversation message list — they are context, not history
 - Ref: [Hermes Agent memory][hermes-memory]
@@ -169,9 +169,9 @@ all tests pass.
 Checkpoint: agent sees durable facts every turn, can update them via tool,
 `mewcode memory list` shows the active profile, tests cover read/write/lifecycle.
 
-## Phase 10 — Streaming
-- Wire rig streaming completion into SSE on the server
-- Tokens stream live to the TUI
+## Phase 10 — Streaming ✅
+- [x] Wire rig streaming completion into SSE on the server
+- [x] Tokens stream live to the TUI
 
 ## Phase 11 — First tool
 - `read_file` as `#[rig::tool]`, exercised end-to-end with tracing span

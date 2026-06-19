@@ -18,6 +18,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::Utc;
 use http_body_util::BodyExt;
+use mewcode_engine::memory::MemoryStore as FactStore;
 use mewcode_protocol::env::OPENCODE_GO_API_KEY;
 use mewcode_protocol::event::ChatRequest;
 use mewcode_protocol::routes::{CHAT, HEALTH};
@@ -41,9 +42,11 @@ fn test_config() -> ServerConfig {
 
 /// Build a fresh app backed by an empty in-memory store.
 fn app() -> axum::Router {
+    let fact_store = FactStore::new(std::env::temp_dir().join(uuid::Uuid::new_v4().to_string()));
     build_app(AppState::new(
         test_config(),
         Arc::new(MemoryStore::default()),
+        fact_store,
     ))
 }
 

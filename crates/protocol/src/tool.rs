@@ -28,6 +28,8 @@ pub mod names {
     pub const EDIT_FILE: &str = "edit_file";
     /// Run a shell command in the project directory.
     pub const BASH: &str = "bash";
+    /// Read, write, and list mewcode memory profiles.
+    pub const MEMORY: &str = "mewcode_memory";
 }
 
 /// Read-only tool set, available in both `Build` and `Plan` modes.
@@ -217,6 +219,7 @@ impl ToolName {
         ToolName(names::WRITE_FILE),
         ToolName(names::EDIT_FILE),
         ToolName(names::BASH),
+        ToolName(names::MEMORY),
     ];
 
     /// Parse a tool name from a string the model emitted.

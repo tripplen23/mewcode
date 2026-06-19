@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, Args};
 
 use mewcode_client::ClientConfig;
 
@@ -28,6 +28,28 @@ enum Cmd {
     Version,
     /// Smoke test and exit.
     Hello,
+    /// Read, write, and list persistent memory.
+    Memory(MemoryArgs),
+}
+
+#[derive(Debug, Args)]
+#[command(args_conflicts_with_subcommands = true)]
+struct MemoryArgs {
+    #[command(subcommand)]
+    command: MemoryCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum MemoryCommand {
+    /// Print the current memory content.
+    Read,
+    /// Overwrite memory with new content.
+    Write {
+        /// The new memory content (markdown).
+        content: String,
+    },
+    /// List available memory profiles.
+    List,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -76,6 +98,58 @@ fn main() -> anyhow::Result<()> {
             Cmd::Migrate => {
                 anyhow::bail!("migrate is not implemented yet")
             }
+            Cmd::Memory(args) => match args.command {
+                MemoryCommand::Read => {
+                    let content = read_memory().await?;
+                    println!("{}", content);
+                    Ok(())
+                }
+                MemoryCommand::Write { content } => {
+                    write_memory(&content).await?;
+                    println!("memory written");
+                    Ok(())
+                }
+                MemoryCommand::List => {
+                    let profiles = list_profiles().await?;
+                    for p in profiles {
+                        println!("{p}");
+                    }
+                    Ok(())
+                }
+            },
         }
     })
+}
+
+/// Read memory from the server.
+async fn read_memory() -> Result<String, anyhow::Error> {
+    let config = ClientConfig::load()?;
+    let url = format!("{}/memory", config.api_url);
+    let resp = reqwest::get(&url).await?;
+    let body: serde_json::Value = resp.json().await?;
+    Ok(body["content"].as_str().unwrap_or_default().to_string())
+}
+
+/// Write memory via the server.
+async fn write_memory(content: &str) -> Result<(), anyhow::Error> {
+    let config = ClientConfig::load()?;
+    let url = format!("{}/memory", config.api_url);
+    let client = reqwest::Client::new();
+    client
+        .post(&url)
+        .json(&serde_json::json!({ "content": content }))
+        .send()
+        .await?;
+    Ok(())
+}
+
+/// List memory profiles from the server.
+async fn list_profiles() -> Result<Vec<String>, anyhow::Error> {
+    // For now, just call GET /memory and report the active profile.
+    // A future RPC can return available profiles once the server supports it.
+    let config = ClientConfig::load()?;
+    let url = format!("{}/memory", config.api_url);
+    let resp = reqwest::get(&url).await?;
+    let body: serde_json::Value = resp.json().await?;
+    Ok(vec![body["profile"].as_str().unwrap_or("default").to_string()])
 }

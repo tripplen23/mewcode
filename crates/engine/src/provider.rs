@@ -10,9 +10,14 @@
 //! abstraction; the provider arms here are only a routing shim that selects the
 //! right Rig client for the model kind.
 
-use mewcode_protocol::{ModelId, ModelKind};
+use futures::StreamExt;
+use mewcode_protocol::{ModelId, ModelKind, StreamEvent};
+use rig_core::agent::MultiTurnStreamItem;
 use rig_core::client::CompletionClient;
 use rig_core::completion::Prompt;
+use rig_core::streaming::StreamedAssistantContent;
+use rig_core::streaming::StreamingPrompt;
+use tokio::sync::mpsc;
 
 use crate::error::EngineError;
 
@@ -92,6 +97,86 @@ impl Provider {
         };
         Ok(reply)
     }
+
+    /// Like [`invoke_agent`] but streams `TextDelta` events as text chunks
+    /// arrive, emitting them through `tx`.
+    pub async fn invoke_agent_streaming(
+        &self,
+        model_id: &str,
+        system_prompt: String,
+        history: Vec<rig_core::completion::Message>,
+        user_text: String,
+        max_tokens: u64,
+        max_turns: usize,
+        tx: &mpsc::Sender<StreamEvent>,
+    ) -> Result<String, EngineError> {
+        match self {
+            Provider::Anthropic(p) => {
+                let agent = p
+                    .client()
+                    .agent(model_id)
+                    .name("mewcode")
+                    .preamble(&system_prompt)
+                    .max_tokens(max_tokens)
+                    .default_max_turns(max_turns)
+                    .build();
+                stream_agent_completion(agent, user_text, history, tx).await
+            }
+            Provider::OpenAi(p) => {
+                let agent = p
+                    .client()
+                    .agent(model_id)
+                    .name("mewcode")
+                    .preamble(&system_prompt)
+                    .max_tokens(max_tokens)
+                    .default_max_turns(max_turns)
+                    .build();
+                stream_agent_completion(agent, user_text, history, tx).await
+            }
+        }
+    }
+}
+
+/// Generic streaming helper for any Rig `Agent` with the default hook (`()`).
+async fn stream_agent_completion<M: rig_core::completion::CompletionModel + 'static>(
+    agent: rig_core::agent::Agent<M, ()>,
+    user_text: String,
+    history: Vec<rig_core::completion::Message>,
+    tx: &mpsc::Sender<StreamEvent>,
+) -> Result<String, EngineError> {
+    let mut stream = agent
+        .stream_prompt(user_text)
+        .with_history(history)
+        .await;
+
+    let mut full_reply = String::new();
+    while let Some(item) = stream.next().await {
+        match item {
+            Ok(MultiTurnStreamItem::StreamAssistantItem(
+                StreamedAssistantContent::Text(t),
+            )) => {
+                let delta = t.text;
+                let _ = tx
+                    .send(StreamEvent::TextDelta {
+                        delta: delta.clone(),
+                    })
+                    .await;
+                full_reply.push_str(&delta);
+            }
+            Ok(MultiTurnStreamItem::FinalResponse(response)) => {
+                if full_reply.is_empty() {
+                    let text = response.response().to_string();
+                    if !text.is_empty() {
+                        let _ = tx.send(StreamEvent::TextDelta { delta: text.clone() }).await;
+                        full_reply = text;
+                    }
+                }
+            }
+            Err(e) => return Err(EngineError::Other(e.to_string())),
+            _ => {}
+        }
+    }
+    Ok(full_reply)
 }
 
 /// Anthropic-compatible provider. Wraps rig-core's

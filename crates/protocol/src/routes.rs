@@ -21,3 +21,9 @@ pub const CHAT: &str = "/chat";
 
 /// `GET /storage/status` — active storage backend and resolved data dir.
 pub const STORAGE_STATUS: &str = "/storage/status";
+
+/// `GET /memory` — read the active memory profile.
+pub const MEMORY_GET: &str = "/memory";
+
+/// `POST /memory` — write to the active memory profile.
+pub const MEMORY_POST: &str = "/memory";

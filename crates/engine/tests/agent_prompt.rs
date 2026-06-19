@@ -23,6 +23,7 @@ fn build_mode_includes_tool_descriptors() {
     let tools = Arc::new(default_registry(
         ProjectContext::new(std::env::temp_dir()),
         skills_for_registry,
+        None,
     ));
     let prompt = build_system_prompt(Mode::Build, &skills, &tools);
     // The default registry has the 4 read-only tools + use_skill.

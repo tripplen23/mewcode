@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use anyhow::Context;
+use mewcode_engine::memory::MemoryStore;
 use mewcode_server::store::fs::{FsStore, resolve_data_dir};
 use mewcode_server::{AppState, config::ServerConfig};
 use opentelemetry::KeyValue;
@@ -33,7 +34,8 @@ async fn main() -> anyhow::Result<()> {
     );
     tracing::info!(data_dir = %data_dir.display(), "session store ready");
 
-    let state = AppState::new(config.clone(), store);
+    let memory = MemoryStore::new(data_dir);
+    let state = AppState::new(config.clone(), store, memory);
 
     let listener = TcpListener::bind(addr).await?;
     tracing::info!(%addr, "mewcode server listening");
