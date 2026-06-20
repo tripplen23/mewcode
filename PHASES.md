@@ -173,24 +173,29 @@ Checkpoint: agent sees durable facts every turn, can update them via tool,
 - [x] Wire rig streaming completion into SSE on the server
 - [x] Tokens stream live to the TUI
 
-## Phase 11 — Tool-calling loop
-- Bridge mewcode's `ToolContracts` trait to Rig's `ToolDyn` via a
+## Phase 11 — Tool-calling loop ✅
+- [x] Bridge mewcode's `ToolContracts` trait to Rig's `ToolDyn` via a
   `RigToolAdapter` wrapper so the Rig agent can call mewcode tools
   natively
-- Wire the `ToolRegistry` (built via `default_registry`) into the Rig
+- [x] Wire the `ToolRegistry` (built via `default_registry`) into the Rig
   agent builder in `Provider::invoke_agent_streaming` — pass tools via
   `.tools(Vec<Box<dyn ToolDyn>>)`
-- Increase `MAX_AGENT_TURNS` from 1 to 10 to allow multi-turn tool-call →
+- [x] Increase `MAX_AGENT_TURNS` from 1 to 10 to allow multi-turn tool-call →
   result → response cycles (Rig handles the loop internally)
-- Emit `StreamEvent::ToolInputAvailable` and `ToolOutputAvailable` from
+- [x] Emit `StreamEvent::ToolInputAvailable` and `ToolOutputAvailable` from
   `stream_agent_completion` when the stream yields
   `StreamedAssistantContent::ToolCall` and `StreamUserItem` items
-- Exercise `read_file` end-to-end: the model asks to read a file, the
+- [x] Exercise `read_file` end-to-end: the model asks to read a file, the
   adapter dispatches to `ReadFileTool::execute`, the result goes back
   to the model, and the final reply references the file contents
-- Also exercise `mewcode_memory` end-to-end: the model writes a fact,
+- [x] Also exercise `mewcode_memory` end-to-end: the model writes a fact,
   the adapter dispatches to `MewcodeMemoryTool::execute`, the fact
   persists to `memories/default.md`
+- [x] E2E integration test with real LLM calls + Langfuse trace verification
+  (`crates/server/tests/agent_tool_e2e.rs`)
+- [x] Addressed Copilot + CodeRabbit review comments (deterministic tool
+  ordering, explicit JSON parse errors, canonicalized project root,
+  collision-resistant temp paths, accurate comments)
 - Ref: [Anthropic tool guide][tool-guide]
 
 Checkpoint: the agent can call `read_file` and `mewcode_memory` during

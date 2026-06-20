@@ -208,7 +208,7 @@ async fn agent_reads_readme_via_tool_call() {
     // --- Build the harness with real tools ---
     let skills = Arc::new(SkillRegistry::load_defaults());
     let ctx = ProjectContext::new(project.clone());
-    let store = MemoryStore::new(data_dir);
+    let store = MemoryStore::new(data_dir.clone());
     let tools = Arc::new(default_registry(ctx, skills.clone(), Some(store)));
     let session_id = uuid::Uuid::new_v4();
 
@@ -371,4 +371,8 @@ async fn agent_reads_readme_via_tool_call() {
 
     // --- Clean up ---
     let _ = std::fs::remove_dir_all(&project);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    let _ = std::fs::remove_dir_all(
+        std::env::temp_dir().join(format!("mewcode-e2e-mem-{session_id}")),
+    );
 }
