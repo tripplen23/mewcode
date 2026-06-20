@@ -28,6 +28,7 @@ pub const GEN_AI_PROVIDER_OPENCODE_GO: &str = "opencode-go";
 pub const LANGFUSE_OBSERVATION_GENERATION: &str = "generation";
 
 /// Role strings used in observation [`serde_json::Value`] payloads.
+pub const GEN_AI_ROLE_SYSTEM: &str = "system";
 pub const GEN_AI_ROLE_USER: &str = "user";
 pub const GEN_AI_ROLE_ASSISTANT: &str = "assistant";
 
@@ -50,7 +51,7 @@ pub const FIELD_LANGFUSE_TRACE_INPUT: &str = "langfuse.trace.input";
 /// `langfuse.trace.output` — trace-level output text.
 pub const FIELD_LANGFUSE_TRACE_OUTPUT: &str = "langfuse.trace.output";
 /// `langfuse.observation.input` — generation-observation input
-/// (JSON-encoded `{"role": "user", "content": "..."}`).
+/// (JSON-encoded `[{"role": "system", ...}, {"role": "user", ...}]`).
 pub const FIELD_LANGFUSE_OBSERVATION_INPUT: &str = "langfuse.observation.input";
 /// `langfuse.observation.output` — generation-observation output
 /// (JSON-encoded `{"role": "assistant", "content": "..."}`).
@@ -108,13 +109,17 @@ pub fn chat_turn_span(model: ModelId, mode: Mode) -> tracing::Span {
 pub fn record_turn_input(span: &tracing::Span, system_prompt: &str, user_text: &str) {
     span.record(FIELD_GEN_AI_SYSTEM_INSTRUCTIONS, system_prompt);
     span.record(FIELD_GEN_AI_PROMPT, user_text);
-    span.record(FIELD_LANGFUSE_TRACE_INPUT, user_text);
-    span.record(FIELD_INPUT_VALUE, user_text);
 
-    let input = serde_json::json!({
-        "role": GEN_AI_ROLE_USER,
-        "content": user_text,
-    });
+    // Langfuse shows observation.input as the GENERATION input. Include the
+    // system prompt so the trace captures the full prompt context.
+    let trace_input = format!("{system_prompt}\n\n{user_text}");
+    span.record(FIELD_LANGFUSE_TRACE_INPUT, &trace_input);
+    span.record(FIELD_INPUT_VALUE, &trace_input);
+
+    let input = serde_json::json!([
+        { "role": GEN_AI_ROLE_SYSTEM, "content": system_prompt },
+        { "role": GEN_AI_ROLE_USER, "content": user_text },
+    ]);
     span.record(FIELD_LANGFUSE_OBSERVATION_INPUT, input.to_string());
 }
 

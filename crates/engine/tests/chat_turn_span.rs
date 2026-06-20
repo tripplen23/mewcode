@@ -25,7 +25,7 @@ impl Records {
             .lock()
             .expect("records lock")
             .iter()
-            .any(|(f, v)| f == field && v == value)
+            .any(|(f, v)| f == field && v.contains(value))
     }
 }
 
@@ -68,7 +68,24 @@ fn chat_turn_span_records_langfuse_io_fields() {
     record_turn_input(&span, "system", "hello");
     record_turn_output(&span, "pong");
 
-    assert!(records.contains("langfuse.trace.input", "hello"));
+    assert!(
+        records.contains("langfuse.trace.input", "system\n\nhello"),
+        "trace input should include system prompt and user text"
+    );
+    assert!(
+        records.contains(
+            "langfuse.observation.input",
+            r#"{"content":"system","role":"system"}"#
+        ),
+        "observation input should include system message"
+    );
+    assert!(
+        records.contains(
+            "langfuse.observation.input",
+            r#"{"content":"hello","role":"user"}"#
+        ),
+        "observation input should include user message"
+    );
     assert!(records.contains("langfuse.trace.output", "pong"));
     assert!(records.contains("gen_ai.prompt", "hello"));
     assert!(records.contains("gen_ai.completion", "pong"));
