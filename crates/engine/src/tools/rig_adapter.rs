@@ -17,7 +17,7 @@ use rig_core::completion::ToolDefinition;
 use rig_core::tool::ToolDyn;
 use rig_core::wasm_compat::WasmBoxedFuture;
 
-use mewcode_protocol::ToolContracts;
+use mewcode_protocol::{ToolContracts, ToolError, ToolErrorPayload};
 
 /// Wrap a mewcode tool so Rig's agent can call it.
 pub struct RigToolAdapter {
@@ -62,13 +62,11 @@ impl ToolDyn for RigToolAdapter {
                     // Return an explicit error payload so the model can
                     // correct its tool call instead of getting a confusing
                     // "missing field" message from a silent null.
-                    let payload = mewcode_protocol::ToolErrorPayload {
-                        error: true,
-                        kind: "invalid_input".into(),
+                    let payload: ToolErrorPayload = (&ToolError::InvalidInput {
                         message: format!("invalid JSON arguments: {e}"),
                         hint: Some("check that the arguments are valid JSON".into()),
-                        retryable: true,
-                    };
+                    })
+                        .into();
                     return Ok(serde_json::to_string(&payload).unwrap_or_else(|_| {
                         r#"{"error":true,"kind":"invalid_input","message":"invalid JSON"}"#
                             .to_string()
@@ -87,7 +85,7 @@ impl ToolDyn for RigToolAdapter {
                     // so Rig sends it back to the model as the tool result.
                     // The model sees the error kind + hint and can retry
                     // with corrected input.
-                    let payload: mewcode_protocol::ToolErrorPayload = (&e).into();
+                    let payload: ToolErrorPayload = (&e).into();
                     Ok(serde_json::to_string(&payload).unwrap_or_else(|_| {
                         r#"{"error":true,"kind":"other","message":"tool failed"}"#.to_string()
                     }))

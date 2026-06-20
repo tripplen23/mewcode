@@ -218,7 +218,6 @@ async fn stream_agent_completion<M: rig_core::completion::CompletionModel + 'sta
                     .await;
             }
             Ok(MultiTurnStreamItem::CompletionCall(call)) => {
-                // Record usage on the current tracing span if available.
                 if let Some(usage) = &call.usage {
                     tracing::debug!(
                         input_tokens = usage.input_tokens,
@@ -241,7 +240,12 @@ async fn stream_agent_completion<M: rig_core::completion::CompletionModel + 'sta
                 }
             }
             Err(e) => return Err(EngineError::Other(e.to_string())),
-            _ => {}
+            Ok(_) => {
+                // Unhandled stream item — Rig may add new variants in
+                // future versions. Log at trace level so they're visible
+                // when debugging without spamming normal runs.
+                tracing::trace!("unhandled MultiTurnStreamItem variant");
+            }
         }
     }
     Ok(full_reply)

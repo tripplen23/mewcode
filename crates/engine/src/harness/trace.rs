@@ -62,9 +62,9 @@ pub const FIELD_INPUT_VALUE: &str = "input.value";
 /// OpenInference compatibility.
 pub const FIELD_OUTPUT_VALUE: &str = "output.value";
 
-/// Max tokens recorded on the span — kept here so the [`super::Harness`]
-/// constant and the span declaration stay in sync.
-pub const MAX_TOKENS: u64 = 4096;
+/// Max tokens recorded on the span — delegates to [`super::Harness::MAX_TOKENS`]
+/// so the span and the agent request stay in sync.
+const MAX_TOKENS: u64 = super::Harness::MAX_TOKENS;
 
 /// Create the [`tracing::Span`] for one agent turn.
 ///

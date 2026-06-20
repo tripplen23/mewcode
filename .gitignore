@@ -37,4 +37,5 @@ Thumbs.db
 *~
 
 .kiro/
-PROMPT.md.env
+PROMPT.md
+.env
