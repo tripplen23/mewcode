@@ -1,22 +1,23 @@
 // Feature: agent-pattern-harness
 //
-// The harness must invoke Rig's Agent abstraction, not wire chat by calling
+// The engine must invoke Rig's Agent abstraction, not wire chat by calling
 // `CompletionModel::completion_request(...).send()` directly. This source-level
 // regression is intentional: the requirement is architectural, and direct
 // completion plumbing would still produce the same text output while blocking
 // future tool/skill and streaming wiring at the right layer.
 
 #[test]
-fn provider_invocation_uses_rig_agent_pattern() {
+fn agent_invocation_uses_rig_agent_pattern() {
+    let agent_src = include_str!("../src/agent/mod.rs");
     let provider_src = include_str!("../src/provider.rs");
 
     assert!(
-        provider_src.contains(".agent("),
-        "provider should build a Rig Agent via CompletionClient::agent"
+        agent_src.contains(".agent("),
+        "agent module should build a Rig Agent via CompletionClient::agent"
     );
     assert!(
-        !provider_src.contains(".completion_request("),
-        "provider must not invoke direct completion_request from the harness path"
+        !agent_src.contains(".completion_request("),
+        "agent module must not invoke direct completion_request from the harness path"
     );
     assert!(
         provider_src.contains("openai::CompletionsClient"),
