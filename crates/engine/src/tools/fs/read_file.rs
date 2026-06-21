@@ -8,7 +8,7 @@ use mewcode_protocol::{
 };
 use serde_json::{Value, json};
 
-use super::ProjectContext;
+use crate::tools::ProjectContext;
 
 /// `read_file` tool.
 pub struct ReadFileTool {

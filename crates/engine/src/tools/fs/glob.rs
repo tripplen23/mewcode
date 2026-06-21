@@ -7,7 +7,7 @@ use mewcode_protocol::{
 };
 use serde_json::{Value, json};
 
-use super::ProjectContext;
+use crate::tools::ProjectContext;
 
 /// `glob` tool.
 pub struct GlobTool {

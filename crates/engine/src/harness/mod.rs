@@ -188,7 +188,7 @@ impl Harness {
 
         // Stream the reply through the agent layer. Token/turn caps are
         // owned by Agent's defaults; the harness doesn't override them.
-        let tools = crate::tools::rig_tools(&self.tools);
+        let tools = crate::tools::adapter::rig_tools(&self.tools);
         let agent = Agent::new(provider, self.model, system_prompt).with_tools(tools);
         let reply = agent.run_turn(user_text, history, tx).await?;
         trace::record_turn_output(&tracing::Span::current(), &reply);

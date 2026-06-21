@@ -1,13 +1,15 @@
-//! Engine-local tool registry. Each tool lives in its own file
-//! (`read_file.rs`, `list_directory.rs`, `glob.rs`, `use_skill.rs`).
-//! This module holds the shared scaffolding: the [`ToolRegistry`], the
-//! [`ProjectContext`] every tool receives, the [`Skills`] type alias,
-//! and the [`default_registry`] factory.
+//! Engine-local tool registry. Tools are grouped by domain under
+//! submodules (`fs`, `skills`, `memory`); this module holds the shared
+//! scaffolding: the [`ToolRegistry`], the [`ProjectContext`] every tool
+//! receives, the [`Skills`] type alias, the [`adapter`] that bridges
+//! mewcode tools to Rig's `ToolDyn`, and the [`default_registry`]
+//! factory.
 //!
 //! Adding a new tool:
-//! 1. Create `crates/engine/src/tools/<name>.rs` with a struct that
-//!    implements [`ToolContracts`].
-//! 2. Add a `mod <name>;` line below.
+//! 1. Create it under the appropriate domain submodule
+//!    (e.g. `crates/engine/src/tools/fs/<name>.rs`).
+//! 2. Add `mod <name>;` and `pub use <name>::<Tool>;` in that
+//!    submodule's `mod.rs`.
 //! 3. Register it in [`default_registry`] (or wherever the harness
 //!    builds its registry).
 
@@ -21,19 +23,14 @@ use serde_json::Value;
 use crate::memory::MemoryStore;
 use crate::skills::SkillRegistry;
 
-mod glob;
-mod list_directory;
+pub mod adapter;
+mod fs;
 mod memory;
-mod read_file;
-mod rig_adapter;
-mod use_skill;
+mod skills;
 
-pub use glob::GlobTool;
-pub use list_directory::ListDirectoryTool;
+pub use fs::{GlobTool, ListDirectoryTool, ReadFileTool};
 pub use memory::MewcodeMemoryTool;
-pub use read_file::ReadFileTool;
-pub use rig_adapter::{RigToolAdapter, rig_tools};
-pub use use_skill::UseSkillTool;
+pub use skills::UseSkillTool;
 
 /// Engine-local alias for the shared skill registry. We keep the
 /// engine's [`SkillRegistry`] in [`crate::skills`] and pass it in to

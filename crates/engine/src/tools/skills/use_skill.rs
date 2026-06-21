@@ -7,7 +7,7 @@ use mewcode_protocol::{
 };
 use serde_json::{Value, json};
 
-use super::Skills;
+use crate::tools::Skills;
 
 /// `use_skill` tool.
 pub struct UseSkillTool {
