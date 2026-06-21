@@ -14,7 +14,7 @@ use mewcode_protocol::{ModelId, ModelKind};
 
 use crate::error::EngineError;
 
-/// A provider client capable of issuing chat-completion requests to OpenCode Go.
+/// A provider client capable of issuing chat-completion requests.
 #[derive(Clone)]
 pub enum Provider {
     /// Anthropic-compatible provider, hits `/v1/messages`.
