@@ -17,6 +17,7 @@ pub mod skills;
 pub mod streaming;
 pub mod tools;
 
+pub use agent::{Agent, build_system_prompt};
 pub use config::EngineConfig;
 pub use error::EngineError;
 pub use harness::Harness;

@@ -17,12 +17,12 @@ use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 use uuid::Uuid;
 
-use crate::agent::build_system_prompt;
+use crate::agent::{Agent, build_system_prompt};
 use crate::config::EngineConfig;
 use crate::error::EngineError;
 use crate::history::HistoryStrategy;
 use crate::memory::MemoryStore;
-use crate::provider::{AgentRequest, Provider};
+use crate::provider::Provider;
 use crate::skills::SkillRegistry;
 use crate::tools::ToolRegistry;
 
@@ -178,11 +178,13 @@ impl Harness {
         .await
         .map_err(|e| EngineError::Other(e.to_string()))?;
 
-        // Stream the reply — invoke_agent_streaming emits TextDelta events
-        // as tokens arrive from the provider.
-        let reply = self
-            .stream_agent(provider, system_prompt, history, user_text, tx)
-            .await?;
+        // Stream the reply through the agent layer.
+        let tools = crate::tools::rig_tools(&self.tools);
+        let agent = Agent::new(provider, self.model, system_prompt)
+            .with_max_tokens(Self::MAX_TOKENS)
+            .with_max_turns(Self::MAX_AGENT_TURNS)
+            .with_tools(tools);
+        let reply = agent.run_turn(user_text, history, tx).await?;
         trace::record_turn_output(&tracing::Span::current(), &reply);
 
         // Emit Finish, recording wall-clock duration (token counts deferred
@@ -196,34 +198,6 @@ impl Harness {
         .map_err(|e| EngineError::Other(e.to_string()))?;
 
         Ok(reply)
-    }
-
-    /// Run exactly one prompt through the routed Rig agent with conversation
-    /// history, streaming TextDelta events through `tx`. Kept off the emission
-    /// path so `run_turn` emits nothing until a reply exists.
-    async fn stream_agent(
-        &self,
-        provider: Provider,
-        system_prompt: String,
-        history: Vec<rig_core::completion::Message>,
-        user_text: String,
-        tx: &mpsc::Sender<StreamEvent>,
-    ) -> Result<String, EngineError> {
-        let tools = crate::tools::rig_tools(&self.tools);
-        provider
-            .invoke_agent_streaming(
-                AgentRequest {
-                    model_id: self.model.provider_id(),
-                    system_prompt,
-                    history,
-                    user_text,
-                    max_tokens: Self::MAX_TOKENS,
-                    max_turns: Self::MAX_AGENT_TURNS,
-                    tools,
-                },
-                tx,
-            )
-            .await
     }
 
     /// Output token cap for a single turn.
