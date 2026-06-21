@@ -1,24 +1,5 @@
 //! Langfuse-specific span helpers for the agent harness.
 //!
-//! Rig already emits `gen_ai.*` OpenTelemetry fields on its own
-//! `invoke_agent`, `chat`, and `execute_tool` spans — those are the
-//! standard GenAI semantic conventions. What rig does NOT emit are the
-//! `langfuse.*` fields that Langfuse's UI reads for its trace
-//! input/output panels and observation metadata.
-//!
-//! This module adds only those Langfuse-specific fields on a thin
-//! `chat-turn` wrapper span. The result in Langfuse is:
-//!
-//! ```text
-//! chat-turn (trace: langfuse.trace.input/output, mewcode.mode)
-//!   └─ invoke_agent (generation: gen_ai.* — emitted by Rig)
-//!        └─ execute_tool (tool: gen_ai.tool.* — emitted by Rig)
-//! ```
-//!
-//! The per-turn `chat` spans and provider `completions` spans are
-//! suppressed in `main.rs` (`rig::agent_chat=off,rig::completions=off`)
-//! to avoid noisy duplicates.
-//!
 //! References:
 //! - <https://opentelemetry.io/docs/specs/semconv/gen-ai/>
 //! - <https://langfuse.com/docs/opentelemetry/get-started>
