@@ -80,6 +80,7 @@ unicode-segmentation = "1"
 globset = "0.4"
 grep = "0.3"
 ignore = "0.4"
+regex = "1"
 
 # Testing
 insta = { version = "1", features = ["yaml"] }

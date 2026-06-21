@@ -203,7 +203,7 @@ Checkpoint: the agent can call `read_file` and `mewcode_memory` during
 a chat turn, the TUI sees `ToolInputAvailable`/`ToolOutputAvailable`
 events, and all existing tests still pass.
 
-## Phase 12 — Remaining tools + PLAN mode gate + Anthropic prompt caching
+## Phase 12 — Remaining tools + PLAN mode gate + Anthropic prompt caching ✅
 Builds directly on the `ToolContracts` / `RigToolAdapter` / `ToolDyn` plumbing
 shipped in Phase 11: every new tool is just a `ToolContracts` impl that gets
 picked up by `default_registry`, and every dispatch flows through the same

@@ -74,6 +74,11 @@ impl Agent {
 
     /// Run one user prompt through the configured Rig agent, streaming events
     /// through `tx` and returning the full assistant reply.
+    ///
+    /// On the Anthropic arm the `CompletionModel` is built directly with
+    /// `with_automatic_caching()` so the system prompt + tool descriptors
+    /// are cached across sub-turns — `client().agent(...)` would build a
+    /// fresh model with caching off, burning tokens on every sub-turn.
     pub async fn run_turn(
         self,
         user_text: String,
@@ -83,9 +88,11 @@ impl Agent {
         let model_id = self.model.provider_id();
         match &self.provider {
             Provider::Anthropic(p) => {
-                let agent = p
+                let model = p
                     .client()
-                    .agent(model_id)
+                    .completion_model(model_id)
+                    .with_automatic_caching();
+                let agent = rig_core::agent::AgentBuilder::new(model)
                     .name("mewcode")
                     .preamble(&self.system_prompt)
                     .max_tokens(self.max_tokens)

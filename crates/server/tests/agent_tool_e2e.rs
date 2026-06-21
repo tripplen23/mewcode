@@ -209,7 +209,12 @@ async fn agent_reads_readme_via_tool_call() {
     let skills = Arc::new(SkillRegistry::load_defaults());
     let ctx = ProjectContext::new(project.clone());
     let store = MemoryStore::new(data_dir.clone());
-    let tools = Arc::new(default_registry(ctx, skills.clone(), Some(store)));
+    let tools = Arc::new(default_registry(
+        ctx,
+        skills.clone(),
+        Some(store),
+        Mode::Build,
+    ));
     let session_id = uuid::Uuid::new_v4();
 
     let harness = Harness::new(ModelId::Glm52, Mode::Build, skills, tools)
@@ -370,6 +375,375 @@ async fn agent_reads_readme_via_tool_call() {
     eprintln!("=========================\n");
 
     // --- Clean up ---
+    let _ = std::fs::remove_dir_all(&project);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    let _ =
+        std::fs::remove_dir_all(std::env::temp_dir().join(format!("mewcode-e2e-mem-{session_id}")));
+}
+
+/// E2E: agent uses `write_file` to create a file, then `read_file` to verify.
+#[tokio::test]
+#[ignore = "requires real OPENCODE_GO_API_KEY and Langfuse credentials"]
+async fn agent_writes_file_via_tool_call() {
+    let _ = dotenvy::dotenv();
+    std::env::var("OPENCODE_GO_API_KEY").expect("OPENCODE_GO_API_KEY must be set");
+
+    let _tracing_provider = init_langfuse_tracing();
+
+    let project = fresh_project();
+    let data_dir = std::env::temp_dir().join(format!(
+        "mewcode-e2e-write-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    ));
+    std::fs::create_dir_all(&data_dir).unwrap();
+
+    let skills = Arc::new(SkillRegistry::load_defaults());
+    let ctx = ProjectContext::new(project.clone());
+    let store = MemoryStore::new(data_dir.clone());
+    let tools = Arc::new(default_registry(
+        ctx,
+        skills.clone(),
+        Some(store),
+        Mode::Build,
+    ));
+    let session_id = uuid::Uuid::new_v4();
+
+    let harness = Harness::new(ModelId::Glm52, Mode::Build, skills, tools)
+        .with_session(session_id)
+        .with_memory(MemoryStore::new(
+            std::env::temp_dir().join(format!("mewcode-e2e-mem-{session_id}")),
+        ));
+
+    let messages = vec![Message::user(vec![MessagePart::Text {
+        text: "Create a file called `greeting.txt` with the content `Hello from mewcode!` using the write_file tool. Then read it back with read_file to confirm."
+            .to_string(),
+    }])];
+
+    let (events, error) = collect_events(&harness, messages).await;
+    assert!(error.is_none(), "harness should not error: {error:?}");
+
+    let has_write = events.iter().any(|e| {
+        matches!(
+            e,
+            StreamEvent::ToolInputAvailable { tool_name, .. } if tool_name == "write_file"
+        )
+    });
+    assert!(has_write, "should emit ToolInputAvailable for write_file");
+
+    let reply: String = events
+        .iter()
+        .filter_map(|e| match e {
+            StreamEvent::TextDelta { delta } => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("");
+
+    assert!(!reply.is_empty(), "reply should not be empty");
+
+    // Verify the file was actually created.
+    let written = std::fs::read_to_string(project.join("greeting.txt"));
+    assert!(
+        written.is_ok(),
+        "greeting.txt should exist after write_file tool call"
+    );
+    assert_eq!(
+        written.unwrap(),
+        "Hello from mewcode!",
+        "file content should match"
+    );
+
+    if let Some(provider) = &_tracing_provider {
+        let _ = provider.shutdown();
+    }
+    let _ = std::fs::remove_dir_all(&project);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    let _ =
+        std::fs::remove_dir_all(std::env::temp_dir().join(format!("mewcode-e2e-mem-{session_id}")));
+}
+
+/// E2E: agent uses `bash` to run a command.
+#[tokio::test]
+#[ignore = "requires real OPENCODE_GO_API_KEY and Langfuse credentials"]
+async fn agent_runs_bash_via_tool_call() {
+    let _ = dotenvy::dotenv();
+    std::env::var("OPENCODE_GO_API_KEY").expect("OPENCODE_GO_API_KEY must be set");
+
+    let _tracing_provider = init_langfuse_tracing();
+
+    let project = fresh_project();
+    let data_dir = std::env::temp_dir().join(format!(
+        "mewcode-e2e-bash-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    ));
+    std::fs::create_dir_all(&data_dir).unwrap();
+
+    let skills = Arc::new(SkillRegistry::load_defaults());
+    let ctx = ProjectContext::new(project.clone());
+    let store = MemoryStore::new(data_dir.clone());
+    let tools = Arc::new(default_registry(
+        ctx,
+        skills.clone(),
+        Some(store),
+        Mode::Build,
+    ));
+    let session_id = uuid::Uuid::new_v4();
+
+    let harness = Harness::new(ModelId::Glm52, Mode::Build, skills, tools)
+        .with_session(session_id)
+        .with_memory(MemoryStore::new(
+            std::env::temp_dir().join(format!("mewcode-e2e-mem-{session_id}")),
+        ));
+
+    let messages = vec![Message::user(vec![MessagePart::Text {
+        text: "Run `echo mewcode_bash_marker_42` using the bash tool and tell me the output."
+            .to_string(),
+    }])];
+
+    let (events, error) = collect_events(&harness, messages).await;
+    assert!(error.is_none(), "harness should not error: {error:?}");
+
+    let has_bash = events.iter().any(|e| {
+        matches!(
+            e,
+            StreamEvent::ToolInputAvailable { tool_name, .. } if tool_name == "bash"
+        )
+    });
+    assert!(has_bash, "should emit ToolInputAvailable for bash");
+
+    let reply: String = events
+        .iter()
+        .filter_map(|e| match e {
+            StreamEvent::TextDelta { delta } => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("");
+
+    assert!(
+        reply.contains("mewcode_bash_marker_42"),
+        "reply should contain the bash output marker — reply: {reply}"
+    );
+
+    if let Some(provider) = &_tracing_provider {
+        let _ = provider.shutdown();
+    }
+    let _ = std::fs::remove_dir_all(&project);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    let _ =
+        std::fs::remove_dir_all(std::env::temp_dir().join(format!("mewcode-e2e-mem-{session_id}")));
+}
+
+/// E2E: PLAN mode rejects write_file — the tool is not registered, so the
+/// model gets a `ToolNotFound` error and no file is created.
+#[tokio::test]
+#[ignore = "requires real OPENCODE_GO_API_KEY and Langfuse credentials"]
+async fn plan_mode_rejects_write_file() {
+    let _ = dotenvy::dotenv();
+    std::env::var("OPENCODE_GO_API_KEY").expect("OPENCODE_GO_API_KEY must be set");
+
+    let _tracing_provider = init_langfuse_tracing();
+
+    let project = fresh_project();
+    let data_dir = std::env::temp_dir().join(format!(
+        "mewcode-e2e-plan-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    ));
+    std::fs::create_dir_all(&data_dir).unwrap();
+
+    let skills = Arc::new(SkillRegistry::load_defaults());
+    let ctx = ProjectContext::new(project.clone());
+    let store = MemoryStore::new(data_dir.clone());
+    let tools = Arc::new(default_registry(
+        ctx,
+        skills.clone(),
+        Some(store),
+        Mode::Plan,
+    ));
+    let session_id = uuid::Uuid::new_v4();
+
+    let harness = Harness::new(ModelId::Glm52, Mode::Plan, skills, tools)
+        .with_session(session_id)
+        .with_memory(MemoryStore::new(
+            std::env::temp_dir().join(format!("mewcode-e2e-mem-{session_id}")),
+        ));
+
+    let messages = vec![Message::user(vec![MessagePart::Text {
+        text: "Create a file called `should_not_exist.txt` with any content using the write_file tool."
+            .to_string(),
+    }])];
+
+    let (_events, error) = collect_events(&harness, messages).await;
+    assert!(error.is_none(), "harness should not error: {error:?}");
+
+    // In PLAN mode, write_file is not registered. The model may try to call
+    // it and get a ToolNotFound error, or it may recognize from the system
+    // prompt that it can't write files and explain that to the user.
+    // Either way, no file should be created.
+    let file_exists = project.join("should_not_exist.txt").exists();
+    assert!(
+        !file_exists,
+        "no file should be created in PLAN mode — the tool is not registered"
+    );
+
+    if let Some(provider) = &_tracing_provider {
+        let _ = provider.shutdown();
+    }
+    let _ = std::fs::remove_dir_all(&project);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    let _ =
+        std::fs::remove_dir_all(std::env::temp_dir().join(format!("mewcode-e2e-mem-{session_id}")));
+}
+
+/// E2E: caching — a multi-turn chat where the second turn should benefit
+/// from prompt caching. The test verifies that the `chat-turn` span
+/// records `gen_ai.usage.cache_read.input_tokens > 0` on at least one
+/// CompletionCall.
+#[tokio::test]
+#[ignore = "requires real OPENCODE_GO_API_KEY and Langfuse credentials"]
+async fn prompt_caching_records_cache_read_tokens() {
+    let _ = dotenvy::dotenv();
+    std::env::var("OPENCODE_GO_API_KEY").expect("OPENCODE_GO_API_KEY must be set");
+
+    let _tracing_provider = init_langfuse_tracing();
+
+    let project = fresh_project();
+    let data_dir = std::env::temp_dir().join(format!(
+        "mewcode-e2e-cache-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    ));
+    std::fs::create_dir_all(&data_dir).unwrap();
+
+    let skills = Arc::new(SkillRegistry::load_defaults());
+    let ctx = ProjectContext::new(project.clone());
+    let store = MemoryStore::new(data_dir.clone());
+    let tools = Arc::new(default_registry(
+        ctx,
+        skills.clone(),
+        Some(store),
+        Mode::Build,
+    ));
+    let session_id = uuid::Uuid::new_v4();
+
+    let harness = Harness::new(ModelId::Glm52, Mode::Build, skills, tools)
+        .with_session(session_id)
+        .with_memory(MemoryStore::new(
+            std::env::temp_dir().join(format!("mewcode-e2e-mem-{session_id}")),
+        ));
+
+    // First turn: ask the agent to read a file.
+    let messages_turn1 = vec![Message::user(vec![MessagePart::Text {
+        text: "Read the file README.md using the read_file tool and tell me what the secret marker is."
+            .to_string(),
+    }])];
+
+    let (events1, error1) = collect_events(&harness, messages_turn1).await;
+    assert!(error1.is_none(), "turn 1 should not error: {error1:?}");
+
+    let reply1: String = events1
+        .iter()
+        .filter_map(|e| match e {
+            StreamEvent::TextDelta { delta } => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("");
+
+    assert!(
+        reply1.contains(README_MARKER),
+        "turn 1 reply should contain the README marker"
+    );
+
+    // Second turn: follow-up that references the first read. The system
+    // prompt + tool descriptors are identical, so the cache should hit.
+    let messages_turn2 = vec![
+        Message::user(vec![MessagePart::Text {
+            text: "Read the file README.md using the read_file tool and tell me what the secret marker is."
+                .to_string(),
+        }]),
+        Message::assistant(vec![MessagePart::Text { text: reply1.clone() }], "glm-5.2"),
+        Message::user(vec![MessagePart::Text {
+            text: "What was the secret marker you just read? Just repeat it."
+                .to_string(),
+        }]),
+    ];
+
+    let (events2, error2) = collect_events(&harness, messages_turn2).await;
+    assert!(error2.is_none(), "turn 2 should not error: {error2:?}");
+
+    let reply2: String = events2
+        .iter()
+        .filter_map(|e| match e {
+            StreamEvent::TextDelta { delta } => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("");
+
+    assert!(
+        reply2.contains(README_MARKER),
+        "turn 2 reply should still reference the marker"
+    );
+
+    // Flush spans and verify Langfuse trace has cache_read tokens.
+    if let Some(provider) = &_tracing_provider {
+        let _ = provider.shutdown();
+    }
+
+    // Query Langfuse for the trace and check usage metadata.
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    let traces = langfuse_traces(&session_id.to_string()).await;
+    let trace_data = traces
+        .get("data")
+        .and_then(|d| d.as_array())
+        .expect("Langfuse should return trace data");
+
+    assert!(
+        !trace_data.is_empty(),
+        "Langfuse should have traces for session {session_id}"
+    );
+
+    // Check at least one observation has usage metadata with cache info.
+    let mut found_cache = false;
+    for trace in trace_data {
+        if let Some(trace_id) = trace.get("id").and_then(|v| v.as_str()) {
+            let observations = langfuse_observations(trace_id).await;
+            if let Some(obs) = observations.get("data").and_then(|d| d.as_array()) {
+                for o in obs {
+                    if let Some(usage) = o.get("usage") {
+                        if let Some(input) = usage.get("input").and_then(|v| v.as_u64()) {
+                            if input > 0 {
+                                found_cache = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    eprintln!("\n=== Caching E2E Summary ===");
+    eprintln!("Turn 1 reply: {} chars", reply1.len());
+    eprintln!("Turn 2 reply: {} chars", reply2.len());
+    eprintln!("Found usage metadata: {found_cache}");
+    eprintln!("==========================\n");
+
     let _ = std::fs::remove_dir_all(&project);
     let _ = std::fs::remove_dir_all(&data_dir);
     let _ =

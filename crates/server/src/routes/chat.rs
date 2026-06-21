@@ -57,6 +57,7 @@ pub async fn chat_stream(
         ctx,
         skills.clone(),
         Some(state.memory.clone()),
+        req.mode,
     ));
 
     let harness = Harness::new(req.model, req.mode, skills, tools)

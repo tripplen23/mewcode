@@ -75,9 +75,22 @@ pub async fn run_agent_stream<M: rig_core::completion::CompletionModel + 'static
             }
             Ok(MultiTurnStreamItem::CompletionCall(call)) => {
                 if let Some(usage) = &call.usage {
+                    // Record cache fields on the parent `chat-turn` span so
+                    // Langfuse shows cache hits/misses on the trace root.
+                    let span = tracing::Span::current();
+                    span.record(
+                        "gen_ai.usage.cache_read.input_tokens",
+                        usage.cached_input_tokens,
+                    );
+                    span.record(
+                        "gen_ai.usage.cache_creation.input_tokens",
+                        usage.cache_creation_input_tokens,
+                    );
                     tracing::debug!(
                         input_tokens = usage.input_tokens,
                         output_tokens = usage.output_tokens,
+                        cached_input_tokens = usage.cached_input_tokens,
+                        cache_creation_input_tokens = usage.cache_creation_input_tokens,
                         "completion call usage"
                     );
                 }

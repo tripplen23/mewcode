@@ -64,6 +64,12 @@ pub fn chat_turn_span(model: ModelId, mode: Mode) -> tracing::Span {
         langfuse.observation.output = tracing::field::Empty,
         input.value = tracing::field::Empty,
         output.value = tracing::field::Empty,
+        // Cache fields — recorded from stream.rs when Usage arrives.
+        // Rig's own `invoke_agent` span may also emit these, but recording
+        // them here ensures the `chat-turn` span (the Langfuse trace root)
+        // always carries them even if rig's span is filtered.
+        gen_ai.usage.cache_read.input_tokens = tracing::field::Empty,
+        gen_ai.usage.cache_creation.input_tokens = tracing::field::Empty,
     )
 }
 
