@@ -4,33 +4,32 @@
 //! calls or the user cancels.
 
 mod completion;
+mod trace;
 
 pub use self::completion::last_user_text;
+pub use self::trace::{chat_turn_span, record_turn_input, record_turn_output};
 
 use std::sync::Arc;
 
 use mewcode_protocol::{Message, Mode, ModelId, Role, StreamEvent};
 use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 use uuid::Uuid;
 
-use crate::agent::build_system_prompt;
+use crate::agent::{Agent, build_system_prompt};
 use crate::config::EngineConfig;
 use crate::error::EngineError;
 use crate::history::HistoryStrategy;
 use crate::memory::MemoryStore;
-use crate::provider::{AgentRequest, Provider};
+use crate::provider::Provider;
 use crate::skills::SkillRegistry;
 use crate::tools::ToolRegistry;
-use crate::trace;
 
 /// The agent harness.
 #[derive(Clone)]
 pub struct Harness {
     model: ModelId,
     mode: Mode,
-    cancel: CancellationToken,
     skills: Arc<SkillRegistry>,
     tools: Arc<ToolRegistry>,
     session_id: Option<Uuid>,
@@ -61,7 +60,6 @@ impl Harness {
         Self {
             model,
             mode,
-            cancel: CancellationToken::new(),
             skills,
             tools,
             session_id: None,
@@ -83,35 +81,28 @@ impl Harness {
         self
     }
 
-    /// Cancel the in-flight stream, if any.
-    pub fn cancel(&self) {
-        self.cancel.cancel();
+    /// The exact system prompt sent this turn: static sections plus, when
+    /// present, the durable-memory section. Single source of truth so
+    /// `run_turn_inner` always sends what this returns.
+    fn compose_system_prompt(&self) -> String {
+        let mut prompt = build_system_prompt(self.mode, &self.skills, &self.tools);
+        if let Some(section) = self.memory.as_ref().and_then(|m| m.format()) {
+            prompt.push_str("\n\n");
+            prompt.push_str(&section);
+        }
+        prompt
     }
 
-    /// The system prompt for the model's first turn.
-    pub fn system_prompt(&self) -> String {
-        build_system_prompt(self.mode, &self.skills, &self.tools)
-    }
-
-    /// Number of skills currently available.
-    pub fn skill_count(&self) -> usize {
-        self.skills.len()
-    }
-
-    /// Tool names currently registered.
-    pub fn tool_names(&self) -> Vec<&'static str> {
-        self.tools.names()
-    }
-
-    /// Invoke the configured Rig agent once and stream the reply as
-    /// `Start` → `TextDelta`* → `Finish`. Returns `Err` on any failure and
-    /// emits nothing on that path — the caller owns the `Error` event.
+    /// Run one agent invocation, streaming events through the channel.
+    /// The agent may make up to `MAX_AGENT_TURNS` sub-turns (tool calls
+    /// → results → reply) before finishing. Returns `Err` on any failure
+    /// and emits nothing on that path — the caller owns the `Error` event.
     pub async fn run_turn(
         &self,
         messages: &[Message],
         tx: mpsc::Sender<StreamEvent>,
     ) -> Result<(), EngineError> {
-        let span = self.chat_turn_span();
+        let span = trace::chat_turn_span(self.model, self.mode);
         if let Some(session_id) = self.session_id {
             span.record("langfuse.session.id", session_id.to_string());
         }
@@ -120,41 +111,6 @@ impl Harness {
             .instrument(span)
             .await
             .map(|_| ())
-    }
-
-    /// Create the [`tracing::Span`] for one agent turn. Exposed as `pub`
-    /// only for the tracing-instrumentation unit test in
-    /// `crates/engine/tests/chat_turn_span.rs`.
-    pub fn chat_turn_span(&self) -> tracing::Span {
-        tracing::info_span!(
-            "chat-turn",
-            gen_ai.operation.name = trace::GEN_AI_OP_INVOKE_AGENT,
-            gen_ai.agent.name = trace::GEN_AI_AGENT_MEWCODE,
-            gen_ai.provider.name = trace::GEN_AI_PROVIDER_OPENCODE_GO,
-            gen_ai.request.model = self.model.provider_id(),
-            gen_ai.request.max_tokens = Self::MAX_TOKENS,
-            gen_ai.system_instructions = tracing::field::Empty,
-            gen_ai.prompt = tracing::field::Empty,
-            gen_ai.completion = tracing::field::Empty,
-            gen_ai.response.id = tracing::field::Empty,
-            gen_ai.response.model = tracing::field::Empty,
-            gen_ai.usage.input_tokens = tracing::field::Empty,
-            gen_ai.usage.output_tokens = tracing::field::Empty,
-            gen_ai.usage.cache_read.input_tokens = tracing::field::Empty,
-            gen_ai.usage.cache_creation.input_tokens = tracing::field::Empty,
-            gen_ai.usage.tool_use_prompt_tokens = tracing::field::Empty,
-            gen_ai.usage.reasoning_tokens = tracing::field::Empty,
-            mewcode.mode = ?self.mode,
-            langfuse.trace.name = trace::TRACE_NAME_CHAT_TURN,
-            langfuse.session.id = tracing::field::Empty,
-            langfuse.trace.input = tracing::field::Empty,
-            langfuse.trace.output = tracing::field::Empty,
-            langfuse.observation.type = trace::LANGFUSE_OBSERVATION_GENERATION,
-            langfuse.observation.input = tracing::field::Empty,
-            langfuse.observation.output = tracing::field::Empty,
-            input.value = tracing::field::Empty,
-            output.value = tracing::field::Empty,
-        )
     }
 
     /// The turn proper: resolve config, select the user message, build
@@ -192,17 +148,13 @@ impl Harness {
         let history = self.history_strategy.build(&messages[..current_user_pos]);
 
         // Build the system prompt, optionally injecting durable memory.
-        let mut system_prompt = build_system_prompt(self.mode, &self.skills, &self.tools);
-        if let Some(memory_section) = self.memory.as_ref().and_then(|m| m.format()) {
-            system_prompt.push_str("\n\n");
-            system_prompt.push_str(&memory_section);
-        }
+        let system_prompt = self.compose_system_prompt();
 
         let provider = Provider::for_model(self.model, &cfg.api_key, &cfg.base_url)?;
-        Self::record_turn_input(&tracing::Span::current(), &system_prompt, &user_text);
+        trace::record_turn_input(&tracing::Span::current(), &system_prompt, &user_text);
 
         // Emit Start before the first token so the client can prepare.
-        let message_id = uuid::Uuid::new_v4();
+        let message_id = Uuid::new_v4();
         let started = std::time::Instant::now();
         tx.send(StreamEvent::Start {
             message_id,
@@ -212,12 +164,12 @@ impl Harness {
         .await
         .map_err(|e| EngineError::Other(e.to_string()))?;
 
-        // Stream the reply — invoke_agent_streaming emits TextDelta events
-        // as tokens arrive from the provider.
-        let reply = self
-            .stream_agent(provider, system_prompt, history, user_text, tx)
-            .await?;
-        Self::record_turn_output(&tracing::Span::current(), &reply);
+        // Stream the reply through the agent layer. Token/turn caps are
+        // owned by Agent's defaults; the harness doesn't override them.
+        let tools = crate::tools::adapter::rig_tools(&self.tools);
+        let agent = Agent::new(provider, self.model, system_prompt).with_tools(tools);
+        let reply = agent.run_turn(user_text, history, tx).await?;
+        trace::record_turn_output(&tracing::Span::current(), &reply);
 
         // Emit Finish, recording wall-clock duration (token counts deferred
         // until provider reports them).
@@ -232,40 +184,6 @@ impl Harness {
         Ok(reply)
     }
 
-    /// Run exactly one prompt through the routed Rig agent with conversation
-    /// history, streaming TextDelta events through `tx`. Kept off the emission
-    /// path so `run_turn` emits nothing until a reply exists.
-    async fn stream_agent(
-        &self,
-        provider: Provider,
-        system_prompt: String,
-        history: Vec<rig_core::completion::Message>,
-        user_text: String,
-        tx: &mpsc::Sender<StreamEvent>,
-    ) -> Result<String, EngineError> {
-        provider
-            .invoke_agent_streaming(
-                AgentRequest {
-                    model_id: self.model.provider_id(),
-                    system_prompt,
-                    history,
-                    user_text,
-                    max_tokens: Self::MAX_TOKENS,
-                    max_turns: Self::MAX_AGENT_TURNS,
-                },
-                tx,
-            )
-            .await
-    }
-
-    /// Output token cap for a single turn.
-    const MAX_TOKENS: u64 = 4096;
-
-    /// Max internal Rig agent turns. No tools are registered yet, so this is a
-    /// no-op today; keeping it explicit prevents the next phase from having to
-    /// rediscover where multi-turn depth belongs.
-    const MAX_AGENT_TURNS: usize = 1;
-
     /// Emit the success-path event sequence for one turn: exactly one `Start`
     /// carrying this turn's mode and model, then a single `TextDelta` (omitted
     /// when `reply` is empty), then exactly one `Finish`, with zero tool events.
@@ -275,7 +193,7 @@ impl Harness {
         tx: &mpsc::Sender<StreamEvent>,
     ) -> Result<(), EngineError> {
         let started = std::time::Instant::now();
-        let message_id = uuid::Uuid::new_v4();
+        let message_id = Uuid::new_v4();
 
         tx.send(StreamEvent::Start {
             message_id,
@@ -302,34 +220,5 @@ impl Harness {
         .map_err(|e| EngineError::Other(e.to_string()))?;
 
         Ok(())
-    }
-
-    /// Record the turn's input on the current span. Exposed as `pub` for the
-    /// tracing-instrumentation unit test.
-    pub fn record_turn_input(span: &tracing::Span, system_prompt: &str, user_text: &str) {
-        span.record(trace::FIELD_GEN_AI_SYSTEM_INSTRUCTIONS, system_prompt);
-        span.record(trace::FIELD_GEN_AI_PROMPT, user_text);
-        span.record(trace::FIELD_LANGFUSE_TRACE_INPUT, user_text);
-        span.record(trace::FIELD_INPUT_VALUE, user_text);
-
-        let input = serde_json::json!({
-            "role": trace::GEN_AI_ROLE_USER,
-            "content": user_text,
-        });
-        span.record(trace::FIELD_LANGFUSE_OBSERVATION_INPUT, input.to_string());
-    }
-
-    /// Record the turn's output on the current span. Exposed as `pub` for the
-    /// tracing-instrumentation unit test.
-    pub fn record_turn_output(span: &tracing::Span, reply: &str) {
-        span.record(trace::FIELD_GEN_AI_COMPLETION, reply);
-        span.record(trace::FIELD_LANGFUSE_TRACE_OUTPUT, reply);
-        span.record(trace::FIELD_OUTPUT_VALUE, reply);
-
-        let output = serde_json::json!({
-            "role": trace::GEN_AI_ROLE_ASSISTANT,
-            "content": reply,
-        });
-        span.record(trace::FIELD_LANGFUSE_OBSERVATION_OUTPUT, output.to_string());
     }
 }

@@ -7,7 +7,7 @@ use mewcode_protocol::{
 };
 use serde_json::{Value, json};
 
-use super::ProjectContext;
+use crate::tools::ProjectContext;
 
 /// `list_directory` tool.
 pub struct ListDirectoryTool {
@@ -30,16 +30,12 @@ impl ToolContracts for ListDirectoryTool {
     fn descriptor(&self) -> ToolDescriptor {
         ToolDescriptor {
             name: names::LIST_DIRECTORY.to_string(),
-            description: concat!(
-                "List entries in a directory inside the project root. Directories are listed first, ",
-                "then files, both alphabetically. Hidden files (starting with `.`) and ",
-                "`node_modules` are skipped.\n\n",
-                "**When to use:** When you need to know what files or subdirectories exist. ",
-                "Prefer this over running `ls` in `bash`.\n\n",
-                "**When NOT to use:** For finding files by name, use `glob` instead — it is faster ",
-                "and the result is sorted."
-            )
-            .to_string(),
+            description: "List entries in a directory inside the project root. Directories are listed first, then files, both alphabetically. Hidden files (starting with `.`) and `node_modules` are skipped.
+
+**When to use:** When you need to know what files or subdirectories exist. Prefer this over running `ls` in `bash`.
+
+**When NOT to use:** For finding files by name, use `glob` instead — it is faster and the result is sorted."
+                .to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {

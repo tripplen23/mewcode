@@ -1,13 +1,89 @@
-//! Prompt rendering helpers. Turns a `ToolDescriptor` (and a list of
-//! them) into the markdown block injected into the system prompt.
+//! System-prompt construction for the mewcode agent.
+//!
+//! The prompt is assembled from static sections (identity, mode rules) and
+//! dynamic sections (tool descriptors, skill catalog). Static text lives in
+//! `&'static str` helpers so the prompt layout is readable and easy to edit;
+//! dynamic text is generated from the registries passed in.
 
-use mewcode_protocol::ToolDescriptor;
+use std::fmt::Write as _;
 
+use mewcode_protocol::{Mode, ToolDescriptor};
+
+use crate::skills::SkillRegistry;
 use crate::tools::ToolRegistry;
 
-/// Render the full set of tool descriptors as a markdown block for the
-/// system prompt, sorted alphabetically by name. Empty string if the
-/// registry is empty.
+/// Build the full system prompt for the given mode.
+///
+/// PLAN emphasises analysis; BUILD emphasises implementation.
+pub fn build_system_prompt(mode: Mode, skills: &SkillRegistry, tools: &ToolRegistry) -> String {
+    let mut out = String::new();
+
+    out.push_str(intro());
+    out.push_str(mode_section(mode));
+    out.push_str(rules());
+
+    let tool_block = format_tool_descriptors(tools);
+    if !tool_block.is_empty() {
+        out.push('\n');
+        out.push_str(&tool_block);
+    }
+
+    let catalog = skills.catalog_for_system_prompt();
+    if !catalog.is_empty() {
+        out.push('\n');
+        out.push_str(&catalog);
+    }
+
+    out
+}
+
+/// Static identity section: who the agent is and what modes exist.
+fn intro() -> &'static str {
+    "You are Mew, an expert software engineer working as a coding assistant inside a terminal application.
+
+The application has two modes the user can switch between:
+- **PLAN** - Read-only analysis and planning. No file modifications.
+- **BUILD** - Full implementation with read and write tools."
+}
+
+/// Static mode-specific section.
+fn mode_section(mode: Mode) -> &'static str {
+    match mode {
+        Mode::Plan => {
+            "
+
+## Mode: PLAN
+You are in planning mode. Your job is to analyze, research, and propose solutions - but NOT make changes.
+- Use your available tools to explore the codebase
+- Present your analysis and a clear plan of action
+- Explain trade-offs and ask for clarification when needed"
+        }
+        Mode::Build => {
+            "
+
+## Mode: BUILD
+You are in build mode. Your job is to implement changes directly.
+- Read and understand the relevant code before making changes
+- Use write_file to create new files, edit_file for targeted modifications
+- Use bash to run commands (tests, builds, git operations)
+- After making changes, verify the work when possible"
+        }
+    }
+}
+
+/// Static rules section.
+fn rules() -> &'static str {
+    "
+
+## Rules
+1. **Be decisive.** Use glob/grep to find what's relevant, then read only those files. Don't read every file in the project.
+2. **Never re-read files you already read** in this conversation.
+3. **Batch your tool calls.** Call multiple tools in parallel when possible (e.g. read 5 files at once, not one at a time).
+4. **Prefer concise responses.** Every tool accepts a `response_format` of `concise` (default) or `detailed`."
+}
+
+/// Render the full set of tool descriptors as a markdown block for the system prompt,
+/// sorted alphabetically by name. Empty string if the  registry is empty.
 pub fn format_tool_descriptors(tools: &ToolRegistry) -> String {
     if tools.is_empty() {
         return String::new();
@@ -17,14 +93,11 @@ pub fn format_tool_descriptors(tools: &ToolRegistry) -> String {
 
     let mut out = String::from("\n## Tool reference\n\n");
     out.push_str(
-        "The following tools are available in every turn. Each tool's description, input \
-        schema, and examples are below — read them carefully before calling a tool. The \
-        model is expected to choose the right tool and provide the right parameters.\n\n",
+        "The following tools are available in every turn. Each tool's description, input schema, and examples are below - read them carefully before calling a tool. The model is expected to choose the right tool and provide the right parameters.\n\n",
     );
 
     for d in &descriptors {
-        out.push_str(&format_tool_descriptor(d));
-        out.push('\n');
+        let _ = write!(out, "{}", format_tool_descriptor(d));
     }
     out
 }
@@ -32,9 +105,8 @@ pub fn format_tool_descriptors(tools: &ToolRegistry) -> String {
 fn format_tool_descriptor(d: &ToolDescriptor) -> String {
     let mut s = String::new();
 
-    s.push_str(&format!("### `{}`\n\n", d.name));
-    s.push_str(d.description.trim());
-    s.push_str("\n\n");
+    let _ = writeln!(s, "### `{}`\n", d.name);
+    let _ = writeln!(s, "{}", d.description.trim());
 
     // Annotations as a compact one-liner; absent flags are simply skipped.
     let mut flags = Vec::new();
@@ -50,30 +122,33 @@ fn format_tool_descriptor(d: &ToolDescriptor) -> String {
     if d.annotations.idempotent {
         flags.push("idempotent");
     }
-    if !flags.is_empty() {
-        s.push_str(&format!(
-            "**Safety:** {} · **Max response:** ~{} chars\n\n",
+
+    if flags.is_empty() {
+        let _ = writeln!(s, "\n**Max response:** ~{} chars\n", d.max_response_chars);
+    } else {
+        let _ = writeln!(
+            s,
+            "\n**Safety:** {} - **Max response:** ~{} chars\n",
             flags.join(", "),
             d.max_response_chars
-        ));
-    } else {
-        s.push_str(&format!(
-            "**Max response:** ~{} chars\n\n",
-            d.max_response_chars
-        ));
+        );
     }
 
-    s.push_str("**Input schema:**\n```json\n");
-    s.push_str(&serde_json::to_string_pretty(&d.input_schema).unwrap_or_else(|_| "{}".into()));
-    s.push_str("\n```\n\n");
+    let _ = writeln!(s, "**Input schema:**\n```json");
+    let _ = writeln!(
+        s,
+        "{}",
+        serde_json::to_string_pretty(&d.input_schema).unwrap_or_else(|_| "{}".into())
+    );
+    let _ = writeln!(s, "```\n");
 
     if !d.examples.is_empty() {
-        s.push_str("**Examples:**\n");
+        let _ = writeln!(s, "**Examples:**");
         for ex in &d.examples {
             let input = serde_json::to_string(&ex.input).unwrap_or_else(|_| "{}".into());
-            s.push_str(&format!("- {} → `{}`\n", ex.description, input));
+            let _ = writeln!(s, "- {} -> `{}`", ex.description, input);
         }
-        s.push('\n');
+        let _ = writeln!(s);
     }
 
     s

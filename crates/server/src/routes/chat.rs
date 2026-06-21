@@ -6,7 +6,11 @@ use axum::Json;
 use axum::extract::State;
 use axum::response::sse::Sse;
 use futures::stream::Stream;
-use mewcode_engine::{Harness, skills::SkillRegistry, tools::ToolRegistry};
+use mewcode_engine::{
+    Harness,
+    skills::SkillRegistry,
+    tools::{ProjectContext, default_registry},
+};
 use mewcode_protocol::event::ChatRequest;
 use mewcode_protocol::{Message, MessagePart, Role, StreamEvent};
 use std::convert::Infallible;
@@ -42,8 +46,18 @@ pub async fn chat_stream(
     let (stx, srx) = tokio::sync::mpsc::channel::<StreamEvent>(64);
 
     let skills = Arc::new(SkillRegistry::load_defaults());
-    // The tool registry is empty for now
-    let tools = Arc::new(ToolRegistry::new());
+    // Build a real tool registry: read-only tools + use_skill + mewcode_memory.
+    // The project root defaults to the server's CWD — future phases can make
+    // this configurable per session.
+    let root = std::env::current_dir()
+        .or_else(|_| std::fs::canonicalize("."))
+        .unwrap_or_else(|_| ".".into());
+    let ctx = ProjectContext::new(root);
+    let tools = Arc::new(default_registry(
+        ctx,
+        skills.clone(),
+        Some(state.memory.clone()),
+    ));
 
     let harness = Harness::new(req.model, req.mode, skills, tools)
         .with_session(req.session_id)

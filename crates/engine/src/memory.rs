@@ -7,6 +7,13 @@
 //! This is the mewcode equivalent of Hermes Agent's MEMORY.md / USER.md
 //! system: durable facts the agent can read and update via the
 //! `mewcode_memory` tool.
+//!
+//! NOTE: This is intentionally a scaffold. The file read/write path, the
+//! `mewcode_memory` tool, and the system-prompt injection are wired, but
+//! higher-level behaviours — when the model should save a fact, memory
+//! summarisation/compaction, multi-profile selection, and client-visible
+//! memory UI — are not implemented yet. They will be fleshed out in a
+//! future phase.
 
 use std::path::PathBuf;
 

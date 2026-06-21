@@ -7,7 +7,7 @@ use mewcode_protocol::{
 };
 use serde_json::{Value, json};
 
-use super::ProjectContext;
+use crate::tools::ProjectContext;
 
 /// `glob` tool.
 pub struct GlobTool {
@@ -30,14 +30,12 @@ impl ToolContracts for GlobTool {
     fn descriptor(&self) -> ToolDescriptor {
         ToolDescriptor {
             name: names::GLOB.to_string(),
-            description: concat!(
-                "Find files inside the project root whose path matches a glob pattern. ",
-                "`node_modules` and `.git` are skipped. Results are sorted and capped at 200.\n\n",
-                "**When to use:** When you need to find files by name or extension. ",
-                "Prefer this over recursive `ls` — it is O(n) once and returns a flat list.\n\n",
-                "**Examples of good patterns:** `**/*.rs`, `crates/*/Cargo.toml`, `src/**/*.{ts,tsx}`."
-            )
-            .to_string(),
+            description: "Find files inside the project root whose path matches a glob pattern. `node_modules` and `.git` are skipped. Results are sorted and capped at 200.
+
+**When to use:** When you need to find files by name or extension. Prefer this over recursive `ls` — it is O(n) once and returns a flat list.
+
+**Examples of good patterns:** `**/*.rs`, `crates/*/Cargo.toml`, `src/**/*.{ts,tsx}`."
+                .to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {

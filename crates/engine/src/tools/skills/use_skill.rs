@@ -7,7 +7,7 @@ use mewcode_protocol::{
 };
 use serde_json::{Value, json};
 
-use super::Skills;
+use crate::tools::Skills;
 
 /// `use_skill` tool.
 pub struct UseSkillTool {
@@ -30,17 +30,12 @@ impl ToolContracts for UseSkillTool {
     fn descriptor(&self) -> ToolDescriptor {
         ToolDescriptor {
             name: "use_skill".to_string(),
-            description: concat!(
-                "Load the full prompt body of a named skill into your context, then proceed ",
-                "with the user's request following the skill's instructions.\n\n",
-                "**When to use:** When the user's request matches a skill's description in the ",
-                "system prompt. The skill body is loaded *only* into this tool's response — it ",
-                "does not persist in your system prompt.\n\n",
-                "**When NOT to use:** If the request does not match any installed skill, do not ",
-                "invent a name. Skill names must come from the `Available skills` section of the ",
-                "system prompt."
-            )
-            .to_string(),
+            description: "Load the full prompt body of a named skill into your context, then proceed with the user's request following the skill's instructions.
+
+**When to use:** When the user's request matches a skill's description in the system prompt. The skill body is loaded *only* into this tool's response — it does not persist in your system prompt.
+
+**When NOT to use:** If the request does not match any installed skill, do not invent a name. Skill names must come from the `Available skills` section of the system prompt."
+                .to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
