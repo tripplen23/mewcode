@@ -4,6 +4,7 @@ This file tracks the build order agreed in the kickoff plan. Each phase ends wit
 (stated below) so progress is reviewable in small slices.
 
 [tool-guide]: https://www.anthropic.com/engineering/writing-tools-for-agents
+[anthropic-caching]: https://platform.claude.com/docs/en/build-with-claude/prompt-caching
 [skills-guide]: https://resources.anthropic.com/hubfs/The-Complete-Guide-to-Building-Skill-for-Claude.pdf
 [mastra-memory]: https://mastra.ai/docs/memory/overview
 [mastra-observational]: https://mastra.ai/docs/memory/observational-memory
@@ -202,15 +203,102 @@ Checkpoint: the agent can call `read_file` and `mewcode_memory` during
 a chat turn, the TUI sees `ToolInputAvailable`/`ToolOutputAvailable`
 events, and all existing tests still pass.
 
-## Phase 12 — Remaining tools + PLAN mode gate
-- `write_file`, `edit_file`, `list_dir`, `glob`, `grep`, `bash` as
-  `ToolContracts` implementations registered in `default_registry`
-- PLAN mode gate: tools with `destructive: true` or `read_only: false`
-  are filtered out of the registry when `Mode == Plan` — the system
-  prompt already excludes their descriptors, now the registry must
-  also refuse to dispatch them
-- Tracing span on every tool call (tool name, input, output, duration)
-- Ref: [Anthropic tool guide][tool-guide]
+## Phase 12 — Remaining tools + PLAN mode gate + Anthropic prompt caching
+Builds directly on the `ToolContracts` / `RigToolAdapter` / `ToolDyn` plumbing
+shipped in Phase 11: every new tool is just a `ToolContracts` impl that gets
+picked up by `default_registry`, and every dispatch flows through the same
+adapter. The mode gate closes the descriptor-vs-dispatch gap. Caching is
+included because the system prompt + tool layer is large and stable across
+the up-to-10 sub-turns the Rig loop can take, so a missed cache hit burns
+real money on every multi-turn chat.
+
+**Write-side tools**
+- `write_file` — `ToolAnnotations::WRITE_LOCAL`, refuses to escape the
+  project root via `resolve_inside_root`, refuses to overwrite a non-empty
+  file unless `overwrite: true` (Anthropic guide: confirm destructive ops)
+- `edit_file` — single-target string replace; refuses to edit a file that
+  doesn't exist; returns the exact byte range it changed; `WRITE_LOCAL`
+- `bash` — `ToolAnnotations::BASH`, timeout-bounded, output truncated
+  with `truncate_with_marker`; `destructive: true` so the PLAN mode gate
+  blocks it without an extra config knob
+- New tools register in `default_registry(ctx, skills, memory, mode)`;
+  keep the call signature backwards compatible by defaulting `mode` to
+  `Mode::Build`
+
+**Read-side tools**
+- `glob` is already in Phase 11 — make sure its `destructive: false` is
+  preserved through the mode filter
+- `grep` — `ToolAnnotations::READ_ONLY_IDEMPOTENT`, uses the `grep` crate
+  already in the workspace, respects `.gitignore` via the `ignore` crate
+- `list_directory` is already in Phase 11 — same audit
+
+**PLAN mode gate**
+- New `default_registry(ctx, skills, memory, mode)` filters tools by
+  `descriptor().annotations.read_only && !annotations.destructive` when
+  `mode == Mode::Plan` — matches the descriptors the system prompt
+  already excludes, so the model sees the same tool set in both places
+- `dispatch()` keeps the existing `ToolNotFound` error path so a model
+  that tries to call a filtered tool gets the same error shape as an
+  unregistered one (no new error variant)
+- `chat_stream` in the server route passes `req.mode` into the registry
+  factory; no other call site changes
+- Tests: a `plan_mode_filters_write_tools` and a
+  `plan_mode_dispatch_rejects_filtered_tool` that both fail closed
+
+**Anthropic prompt caching**
+- Refactor `Provider::Anthropic` in `engine/src/agent/mod.rs:85-96`:
+  build the `CompletionModel` via `p.client().completion_model(model_id)`
+  then call `.with_automatic_caching()` before handing it to
+  `AgentBuilder::new(model)` (rig-core 0.38.2's `AgentBuilder` has no
+  caching setter, so this is the only way — `client().agent(...)` always
+  builds a fresh `CompletionModel` with caching off)
+- Don't enable on the OpenAI arm — `cache_control` is Anthropic-specific
+  and gets ignored / errors on OpenAI-compatible endpoints
+- Pull `cached_input_tokens` and `cache_creation_input_tokens` out
+  of the `MultiTurnStreamItem::CompletionCall(call).usage` struct
+  (rig-core's cross-provider `Usage` exposes these as `cached_input_tokens`
+  and `cache_creation_input_tokens` — the Anthropic-specific struct uses
+  `cache_read_input_tokens`, which the conversion in
+  `providers/anthropic/completion.rs:139-140` maps to `cached_input_tokens`)
+  and record them on the `chat-turn` span via the existing
+  `gen_ai.usage.cache_read.input_tokens` / `cache_creation.input_tokens`
+  fields (`trace.rs:89-90` already declares them; the wiring was the
+  missing piece)
+- The upstream `Refactor` (remote commit `90c9227`) already extracted
+  the system-prompt composition into `Harness::compose_system_prompt()`
+  (`harness/mod.rs:99`), with `system_prompt()` (`harness/mod.rs:92-94`)
+  as the public accessor delegating to it. The original "delete the
+  dead `Harness::system_prompt()`" bullet is no longer needed; the
+  Phase 12 implementer can grow `compose_system_prompt` if the new
+  mode-aware tool filtering needs to live there too
+- E2E test in `crates/server/tests/agent_tool_e2e.rs` (extend, don't
+  duplicate): run a 2-turn chat that reads the same file twice and
+  assert `gen_ai.usage.cache_read.input_tokens > 0` on the second
+  turn's span. If the assertion fails the test should point at the
+  exact span field, not just dump usage. The harness maps rig-core's
+  cross-provider `Usage::cached_input_tokens` into that span field —
+  the test asserts the field, not the raw rig struct
+
+**E2E coverage**
+- `write_file` and `edit_file` round-trip: model writes a file, server
+  persists the message, reload from `FsStore` shows the new file
+- `bash` runs a `cargo --version` and reports stdout back; assert the
+  truncation marker fires above the cap
+- `grep` finds a marker string in the workspace and returns matches
+- PLAN-mode turn that asks the model to write a file: the request
+  fails closed at the registry layer, the model sees a `ToolNotFound`
+  error, and no file is created
+- A multi-turn chat that exercises caching: read a file → ask a
+  follow-up that needs context from the first read; second turn's
+  span has `gen_ai.usage.cache_read.input_tokens > 0`
+  (the harness maps `Usage::cached_input_tokens` into that span
+  field — the e2e test asserts the field, not the raw rig struct)
+- Ref: [Anthropic tool guide][tool-guide], [Anthropic prompt caching][anthropic-caching]
+
+Checkpoint: the agent can read, write, edit, glob, grep, and run bash;
+PLAN mode refuses to dispatch write tools; Anthropic prompt caching
+is on by default; every tool call is traced; all existing tests still
+pass.
 
 ## Phase 13 — Skills runtime
 - Skill hot-reload: pick up new or changed `SKILL.md` files without restarting
