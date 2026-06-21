@@ -22,7 +22,7 @@ use crate::error::EngineError;
 use crate::provider::Provider;
 
 /// Output token cap for a single turn.
-const DEFAULT_MAX_TOKENS: u64 = 4096;
+pub(crate) const DEFAULT_MAX_TOKENS: u64 = 4096;
 
 /// Max internal Rig agent turns.
 const DEFAULT_MAX_TURNS: usize = 10;

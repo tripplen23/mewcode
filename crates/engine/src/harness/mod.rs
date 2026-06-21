@@ -91,7 +91,19 @@ impl Harness {
 
     /// The system prompt for the model's first turn.
     pub fn system_prompt(&self) -> String {
-        build_system_prompt(self.mode, &self.skills, &self.tools)
+        self.compose_system_prompt()
+    }
+
+    /// The exact system prompt sent this turn: static sections plus, when
+    /// present, the durable-memory section. Single source of truth so the
+    /// public accessor cannot drift from what `run_turn_inner` actually sends.
+    fn compose_system_prompt(&self) -> String {
+        let mut prompt = build_system_prompt(self.mode, &self.skills, &self.tools);
+        if let Some(section) = self.memory.as_ref().and_then(|m| m.format()) {
+            prompt.push_str("\n\n");
+            prompt.push_str(&section);
+        }
+        prompt
     }
 
     /// Number of skills currently available.
@@ -158,11 +170,7 @@ impl Harness {
         let history = self.history_strategy.build(&messages[..current_user_pos]);
 
         // Build the system prompt, optionally injecting durable memory.
-        let mut system_prompt = build_system_prompt(self.mode, &self.skills, &self.tools);
-        if let Some(memory_section) = self.memory.as_ref().and_then(|m| m.format()) {
-            system_prompt.push_str("\n\n");
-            system_prompt.push_str(&memory_section);
-        }
+        let system_prompt = self.compose_system_prompt();
 
         let provider = Provider::for_model(self.model, &cfg.api_key, &cfg.base_url)?;
         trace::record_turn_input(&tracing::Span::current(), &system_prompt, &user_text);
@@ -178,12 +186,10 @@ impl Harness {
         .await
         .map_err(|e| EngineError::Other(e.to_string()))?;
 
-        // Stream the reply through the agent layer.
+        // Stream the reply through the agent layer. Token/turn caps are
+        // owned by Agent's defaults; the harness doesn't override them.
         let tools = crate::tools::rig_tools(&self.tools);
-        let agent = Agent::new(provider, self.model, system_prompt)
-            .with_max_tokens(Self::MAX_TOKENS)
-            .with_max_turns(Self::MAX_AGENT_TURNS)
-            .with_tools(tools);
+        let agent = Agent::new(provider, self.model, system_prompt).with_tools(tools);
         let reply = agent.run_turn(user_text, history, tx).await?;
         trace::record_turn_output(&tracing::Span::current(), &reply);
 
@@ -199,12 +205,6 @@ impl Harness {
 
         Ok(reply)
     }
-
-    /// Output token cap for a single turn.
-    const MAX_TOKENS: u64 = 4096;
-
-    /// Max internal Rig agent turns.
-    const MAX_AGENT_TURNS: usize = 10;
 
     /// Emit the success-path event sequence for one turn: exactly one `Start`
     /// carrying this turn's mode and model, then a single `TextDelta` (omitted

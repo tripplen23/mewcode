@@ -31,20 +31,14 @@ impl ToolContracts for ReadFileTool {
     fn descriptor(&self) -> ToolDescriptor {
         ToolDescriptor {
             name: names::READ_FILE.to_string(),
-            description: concat!(
-                "Read the contents of a file inside the project directory.\n\n",
-                "**When to use:** When you need to see the actual code or text in a file. ",
-                "Prefer this over `bash` with `cat` because it is sandboxed to the project root ",
-                "and returns structured, truncated output.\n\n",
-                "**When NOT to use:** Don't read files you have already read in this conversation. ",
-                "For large files (> 100k chars) the response is truncated — use `grep` first to ",
-                "find the relevant region, then `read_file` with a smaller `from_line`/`limit` scope ",
-                "(range selection lands in a later phase). For binary files, this tool returns an error.\n\n",
-                "**Token efficiency:** The response is truncated to ~100k characters with a clear ",
-                "marker. To see a specific section, prefer a follow-up `grep` rather than reading ",
-                "the whole file again."
-            )
-            .to_string(),
+            description: "Read the contents of a file inside the project directory.
+
+**When to use:** When you need to see the actual code or text in a file. Prefer this over `bash` with `cat` because it is sandboxed to the project root and returns structured, truncated output.
+
+**When NOT to use:** Don't read files you have already read in this conversation. For large files (> 100k chars) the response is truncated — use `grep` first to find the relevant region, then `read_file` with a smaller `from_line`/`limit` scope (range selection lands in a later phase). For binary files, this tool returns an error.
+
+**Token efficiency:** The response is truncated to ~100k characters with a clear marker. To see a specific section, prefer a follow-up `grep` rather than reading the whole file again."
+                .to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {

@@ -23,8 +23,7 @@ use mewcode_protocol::{ToolContracts, ToolError, ToolErrorPayload};
 pub struct RigToolAdapter {
     /// The mewcode tool being adapted.
     inner: Arc<dyn ToolContracts>,
-    /// Cached descriptor — built once at construction so `definition()`
-    /// doesn't re-allocate on every agent turn.
+    /// Cached descriptor — built once at construction.
     descriptor: mewcode_protocol::ToolDescriptor,
 }
 

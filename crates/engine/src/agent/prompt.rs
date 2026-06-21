@@ -39,52 +39,51 @@ pub fn build_system_prompt(mode: Mode, skills: &SkillRegistry, tools: &ToolRegis
 
 /// Static identity section: who the agent is and what modes exist.
 fn intro() -> &'static str {
-    "You are an expert software engineer working as a coding assistant inside a terminal application.\n\
-     \n\
-     The application has two modes the user can switch between:\n\
-      - **PLAN** - Read-only analysis and planning. No file modifications.\n\
-      - **BUILD** - Full implementation with read and write tools."
+    "You are Mew, an expert software engineer working as a coding assistant inside a terminal application.
+
+The application has two modes the user can switch between:
+- **PLAN** - Read-only analysis and planning. No file modifications.
+- **BUILD** - Full implementation with read and write tools."
 }
 
 /// Static mode-specific section.
 fn mode_section(mode: Mode) -> &'static str {
     match mode {
         Mode::Plan => {
-            "\n\
-             \n\
-             ## Mode: PLAN\n\
-             You are in planning mode. Your job is to analyze, research, and propose solutions - but NOT make changes.\n\
-             - Use your available tools to explore the codebase\n\
-             - Present your analysis and a clear plan of action\n\
-             - Explain trade-offs and ask for clarification when needed"
+            "
+
+## Mode: PLAN
+You are in planning mode. Your job is to analyze, research, and propose solutions - but NOT make changes.
+- Use your available tools to explore the codebase
+- Present your analysis and a clear plan of action
+- Explain trade-offs and ask for clarification when needed"
         }
         Mode::Build => {
-            "\n\
-             \n\
-             ## Mode: BUILD\n\
-             You are in build mode. Your job is to implement changes directly.\n\
-             - Read and understand the relevant code before making changes\n\
-             - Use write_file to create new files, edit_file for targeted modifications\n\
-             - Use bash to run commands (tests, builds, git operations)\n\
-             - After making changes, verify the work when possible"
+            "
+
+## Mode: BUILD
+You are in build mode. Your job is to implement changes directly.
+- Read and understand the relevant code before making changes
+- Use write_file to create new files, edit_file for targeted modifications
+- Use bash to run commands (tests, builds, git operations)
+- After making changes, verify the work when possible"
         }
     }
 }
 
 /// Static rules section.
 fn rules() -> &'static str {
-    "\n\
-     \n\
-     ## Rules\n\
-      1. **Be decisive.** Use glob/grep to find what's relevant, then read only those files. Don't read every file in the project.\n\
-      2. **Never re-read files you already read** in this conversation.\n\
-      3. **Batch your tool calls.** Call multiple tools in parallel when possible (e.g. read 5 files at once, not one at a time).\n\
-      4. **Prefer concise responses.** Every tool accepts a `response_format` of `concise` (default) or `detailed`."
+    "
+
+## Rules
+1. **Be decisive.** Use glob/grep to find what's relevant, then read only those files. Don't read every file in the project.
+2. **Never re-read files you already read** in this conversation.
+3. **Batch your tool calls.** Call multiple tools in parallel when possible (e.g. read 5 files at once, not one at a time).
+4. **Prefer concise responses.** Every tool accepts a `response_format` of `concise` (default) or `detailed`."
 }
 
-/// Render the full set of tool descriptors as a markdown block for the
-/// system prompt, sorted alphabetically by name. Empty string if the
-/// registry is empty.
+/// Render the full set of tool descriptors as a markdown block for the system prompt,
+/// sorted alphabetically by name. Empty string if the  registry is empty.
 pub fn format_tool_descriptors(tools: &ToolRegistry) -> String {
     if tools.is_empty() {
         return String::new();
@@ -94,9 +93,7 @@ pub fn format_tool_descriptors(tools: &ToolRegistry) -> String {
 
     let mut out = String::from("\n## Tool reference\n\n");
     out.push_str(
-        "The following tools are available in every turn. Each tool's description, input \
-        schema, and examples are below - read them carefully before calling a tool. The \
-        model is expected to choose the right tool and provide the right parameters.\n\n",
+        "The following tools are available in every turn. Each tool's description, input schema, and examples are below - read them carefully before calling a tool. The model is expected to choose the right tool and provide the right parameters.\n\n",
     );
 
     for d in &descriptors {

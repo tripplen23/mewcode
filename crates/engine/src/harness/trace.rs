@@ -63,9 +63,9 @@ pub const FIELD_INPUT_VALUE: &str = "input.value";
 /// OpenInference compatibility.
 pub const FIELD_OUTPUT_VALUE: &str = "output.value";
 
-/// Max tokens recorded on the span — delegates to [`super::Harness::MAX_TOKENS`]
-/// so the span and the agent request stay in sync.
-const MAX_TOKENS: u64 = super::Harness::MAX_TOKENS;
+/// Max tokens recorded on the span — delegates to the agent's
+/// [`DEFAULT_MAX_TOKENS`](crate::agent) so the span and the agent request stay in sync.
+const MAX_TOKENS: u64 = crate::agent::DEFAULT_MAX_TOKENS;
 
 /// Create the [`tracing::Span`] for one agent turn.
 ///

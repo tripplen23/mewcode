@@ -34,15 +34,10 @@ impl ToolContracts for MewcodeMemoryTool {
     fn descriptor(&self) -> ToolDescriptor {
         ToolDescriptor {
             name: names::MEMORY.to_string(),
-            description: concat!(
-                "Read, write, and list mewcode persistent memory profiles. ",
-                "Memory holds durable facts about the user that the agent ",
-                "should remember across sessions.\n\n",
-                "**When to use:** Use `read` to see what you already know ",
-                "about the user. Use `write` to save a new fact (overwrites ",
-                "the entire memory file). Use `list` to see available profiles."
-            )
-            .to_string(),
+            description: "Read, write, and list mewcode persistent memory profiles. Memory holds durable facts about the user that the agent should remember across sessions.
+
+**When to use:** Use `read` to see what you already know about the user. Use `write` to save a new fact (overwrites the entire memory file). Use `list` to see available profiles."
+                .to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
