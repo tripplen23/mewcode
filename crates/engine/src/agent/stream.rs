@@ -113,10 +113,7 @@ pub async fn run_agent_stream<M: rig_core::completion::CompletionModel + 'static
 
     // Record accumulated cache totals on the parent span
     let span = tracing::Span::current();
-    span.record(
-        "gen_ai.usage.cache_read.input_tokens",
-        total_cache_read,
-    );
+    span.record("gen_ai.usage.cache_read.input_tokens", total_cache_read);
     span.record(
         "gen_ai.usage.cache_creation.input_tokens",
         total_cache_creation,

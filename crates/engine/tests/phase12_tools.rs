@@ -569,7 +569,10 @@ async fn grep_truncates_long_match_lines() {
         "long line should be truncated — got {} chars",
         content.len()
     );
-    assert!(content.contains("truncated"), "should have truncation marker");
+    assert!(
+        content.contains("truncated"),
+        "should have truncation marker"
+    );
 
     let _ = std::fs::remove_dir_all(&project);
 }
