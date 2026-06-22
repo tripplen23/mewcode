@@ -27,6 +27,9 @@ pub async fn run_agent_stream<M: rig_core::completion::CompletionModel + 'static
     let mut stream = agent.stream_prompt(user_text).with_history(history).await;
 
     let mut full_reply = String::new();
+    let mut total_cache_read = 0u64;
+    let mut total_cache_creation = 0u64;
+
     while let Some(item) = stream.next().await {
         match item {
             Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(t))) => {
@@ -75,17 +78,10 @@ pub async fn run_agent_stream<M: rig_core::completion::CompletionModel + 'static
             }
             Ok(MultiTurnStreamItem::CompletionCall(call)) => {
                 if let Some(usage) = &call.usage {
-                    // Record cache fields on the parent `chat-turn` span so
-                    // Langfuse shows cache hits/misses on the trace root.
-                    let span = tracing::Span::current();
-                    span.record(
-                        "gen_ai.usage.cache_read.input_tokens",
-                        usage.cached_input_tokens,
-                    );
-                    span.record(
-                        "gen_ai.usage.cache_creation.input_tokens",
-                        usage.cache_creation_input_tokens,
-                    );
+                    // Accumulate cache tokens across all sub-turns
+                    total_cache_read += usage.cached_input_tokens;
+                    total_cache_creation += usage.cache_creation_input_tokens;
+
                     tracing::debug!(
                         input_tokens = usage.input_tokens,
                         output_tokens = usage.output_tokens,
@@ -114,5 +110,17 @@ pub async fn run_agent_stream<M: rig_core::completion::CompletionModel + 'static
             }
         }
     }
+
+    // Record accumulated cache totals on the parent span
+    let span = tracing::Span::current();
+    span.record(
+        "gen_ai.usage.cache_read.input_tokens",
+        total_cache_read,
+    );
+    span.record(
+        "gen_ai.usage.cache_creation.input_tokens",
+        total_cache_creation,
+    );
+
     Ok(full_reply)
 }

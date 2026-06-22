@@ -88,6 +88,12 @@ impl ToolContracts for EditFileTool {
             .ok_or_else(|| {
                 ToolError::invalid_input("missing `old_string`", "pass a string `old_string` field")
             })?;
+        if old_string.is_empty() {
+            return Err(ToolError::invalid_input(
+                "`old_string` must not be empty",
+                "pass the exact text to replace",
+            ));
+        }
         let new_string = input
             .get("new_string")
             .and_then(|v| v.as_str())

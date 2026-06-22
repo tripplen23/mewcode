@@ -46,7 +46,8 @@ pub async fn chat_stream(
     let (stx, srx) = tokio::sync::mpsc::channel::<StreamEvent>(64);
 
     let skills = Arc::new(SkillRegistry::load_defaults());
-    // Build a real tool registry: read-only tools + use_skill + mewcode_memory.
+    // Build a real tool registry: read-only tools + memory + use_skill.
+    // Write tools (write_file, edit_file, bash) only in Build mode.
     // The project root defaults to the server's CWD — future phases can make
     // this configurable per session.
     let root = std::env::current_dir()

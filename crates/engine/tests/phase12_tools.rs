@@ -409,8 +409,19 @@ async fn grep_skips_binary_files() {
 fn plan_mode_filters_write_tools() {
     let skills = Arc::new(mewcode_engine::skills::SkillRegistry::new());
     let ctx = ProjectContext::new(std::env::temp_dir());
+    let data_dir = std::env::temp_dir().join(format!(
+        "mewcode-plan-filter-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    ));
+    let _ = std::fs::remove_dir_all(&data_dir);
+    std::fs::create_dir_all(&data_dir).unwrap();
 
-    let plan_reg = default_registry(ctx.clone(), skills.clone(), None, Mode::Plan);
+    let store = mewcode_engine::memory::MemoryStore::new(data_dir.clone());
+    let plan_reg = default_registry(ctx.clone(), skills.clone(), Some(store), Mode::Plan);
     let plan_names: Vec<&str> = plan_reg.names().into_iter().collect();
 
     // Read-only tools should be present.
@@ -419,12 +430,12 @@ fn plan_mode_filters_write_tools() {
     assert!(plan_names.contains(&"glob"));
     assert!(plan_names.contains(&"grep"));
     assert!(plan_names.contains(&"use_skill"));
+    assert!(plan_names.contains(&"mewcode_memory")); // Memory tool is read-only
 
     // Write tools should be absent.
     assert!(!plan_names.contains(&"write_file"));
     assert!(!plan_names.contains(&"edit_file"));
     assert!(!plan_names.contains(&"bash"));
-    assert!(!plan_names.contains(&"mewcode_memory"));
 }
 
 #[test]
@@ -464,4 +475,129 @@ async fn plan_mode_dispatch_rejects_filtered_tool() {
     assert_eq!(payload["error"], true);
     assert_eq!(payload["kind"], "tool_not_found");
     assert!(payload["message"].as_str().unwrap().contains("write_file"));
+}
+
+// ---------------------------------------------------------------------------
+// Regression tests from deep review
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn edit_file_rejects_empty_old_string() {
+    let project = fresh_project();
+    std::fs::write(project.join("code.rs"), "fn foo() {}\n").unwrap();
+
+    let tool = EditFileTool::new(ProjectContext::new(project.clone()));
+
+    let err = tool
+        .execute(json!({
+            "path": "code.rs",
+            "old_string": "",
+            "new_string": "fn bar() {}"
+        }))
+        .await
+        .expect_err("should reject empty old_string");
+
+    assert!(matches!(err, ToolError::InvalidInput { .. }));
+    assert!(err.to_string().contains("empty"));
+
+    let _ = std::fs::remove_dir_all(&project);
+}
+
+#[tokio::test]
+async fn bash_handles_large_output_without_deadlock() {
+    // Regression test: producing >64KB of output would deadlock the old
+    // implementation that called wait() before reading stdout/stderr.
+    let project = fresh_project();
+    let tool = BashTool::new(ProjectContext::new(project.clone()));
+
+    // Generate ~100KB of output — exceeds the OS pipe buffer (~64KB).
+    let result = tool
+        .execute(json!({
+            "command": "for i in $(seq 1 2000); do echo \"line $i: $(head -c 50 /dev/zero | tr '\\0' 'x')\"; done",
+            "timeout_ms": 10000
+        }))
+        .await
+        .expect("bash should succeed with large output");
+
+    assert_eq!(result.0["exit_code"], 0);
+    let stdout = result.0["stdout"].as_str().unwrap();
+    assert!(!stdout.is_empty(), "should have captured output");
+
+    let _ = std::fs::remove_dir_all(&project);
+}
+
+#[tokio::test]
+async fn bash_caps_timeout_at_max() {
+    let project = fresh_project();
+    let tool = BashTool::new(ProjectContext::new(project.clone()));
+
+    // Request an absurdly large timeout — should be silently capped.
+    let result = tool
+        .execute(json!({
+            "command": "echo ok",
+            "timeout_ms": 999999999
+        }))
+        .await
+        .expect("bash should succeed");
+
+    assert_eq!(result.0["exit_code"], 0);
+
+    let _ = std::fs::remove_dir_all(&project);
+}
+
+#[tokio::test]
+async fn grep_truncates_long_match_lines() {
+    let project = fresh_project();
+    // Create a file with one very long line containing the search term.
+    let long_line = format!("{} MATCH_HERE {}", "x".repeat(300), "y".repeat(100));
+    std::fs::write(project.join("long.rs"), &long_line).unwrap();
+
+    let tool = GrepTool::new(ProjectContext::new(project.clone()));
+
+    let result = tool
+        .execute(json!({
+            "pattern": "MATCH_HERE"
+        }))
+        .await
+        .expect("grep should succeed");
+
+    let matches = result.0["matches"].as_array().unwrap();
+    assert_eq!(matches.len(), 1);
+    let content = matches[0]["content"].as_str().unwrap();
+    assert!(
+        content.len() < 300,
+        "long line should be truncated — got {} chars",
+        content.len()
+    );
+    assert!(content.contains("truncated"), "should have truncation marker");
+
+    let _ = std::fs::remove_dir_all(&project);
+}
+
+#[test]
+fn plan_mode_includes_memory_when_store_provided() {
+    let skills = Arc::new(mewcode_engine::skills::SkillRegistry::new());
+    let ctx = ProjectContext::new(std::env::temp_dir());
+    let data_dir = std::env::temp_dir().join(format!(
+        "mewcode-plan-mem-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    ));
+    let _ = std::fs::remove_dir_all(&data_dir);
+    std::fs::create_dir_all(&data_dir).unwrap();
+
+    let store = mewcode_engine::memory::MemoryStore::new(data_dir.clone());
+    let plan_reg = default_registry(ctx, skills, Some(store), Mode::Plan);
+    let plan_names: Vec<&str> = plan_reg.names().into_iter().collect();
+
+    assert!(
+        plan_names.contains(&"mewcode_memory"),
+        "memory tool should be available in Plan mode — tools: {:?}",
+        plan_names
+    );
+
+    let _ = std::fs::remove_dir_all(&data_dir);
 }

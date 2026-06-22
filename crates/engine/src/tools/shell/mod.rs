@@ -18,6 +18,9 @@ use crate::tools::ProjectContext;
 /// Default timeout for a bash command (30 seconds).
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 
+/// Maximum allowed timeout (5 minutes). The model cannot exceed this.
+const MAX_TIMEOUT_MS: u64 = 300_000;
+
 /// Maximum output size before truncation (in characters).
 const MAX_OUTPUT_CHARS: usize = 100_000;
 
@@ -42,7 +45,7 @@ impl ToolContracts for BashTool {
     fn descriptor(&self) -> ToolDescriptor {
         ToolDescriptor {
             name: names::BASH.to_string(),
-            description: "Run a shell command in the project directory. The command runs via `bash -c` with a configurable timeout.
+            description: "Run a shell command in the project directory. The command runs via `bash -c` with a configurable timeout (max 5 minutes).
 
 **When to use:** When you need to run builds, tests, git operations, or other shell commands. The working directory is the project root.
 
@@ -58,7 +61,7 @@ impl ToolContracts for BashTool {
                     "timeout_ms": {
                         "type": "integer",
                         "default": 30000,
-                        "description": "Maximum execution time in milliseconds. The command is killed if it exceeds this."
+                        "description": "Maximum execution time in milliseconds (capped at 300000). The command is killed if it exceeds this."
                     }
                 },
                 "required": ["command"],
@@ -92,7 +95,8 @@ impl ToolContracts for BashTool {
         let timeout_ms = input
             .get("timeout_ms")
             .and_then(|v| v.as_u64())
-            .unwrap_or(DEFAULT_TIMEOUT_MS);
+            .unwrap_or(DEFAULT_TIMEOUT_MS)
+            .min(MAX_TIMEOUT_MS);
 
         let mut cmd = Command::new("bash");
         cmd.arg("-c")
@@ -107,33 +111,41 @@ impl ToolContracts for BashTool {
             hint: Some("ensure `bash` is available in PATH".into()),
         })?;
 
+        // Read stdout and stderr concurrently with wait() to avoid the
+        // classic pipe-buffer deadlock: if the child writes more than the
+        // OS pipe buffer (~64KB) and the parent is blocked on wait(),
+        // the child blocks on write() and neither side makes progress.
+        let mut stdout = child.stdout.take().expect("stdout was piped");
+        let mut stderr = child.stderr.take().expect("stderr was piped");
+
+        let mut stdout_buf = String::new();
+        let mut stderr_buf = String::new();
+
         let timeout = Duration::from_millis(timeout_ms);
-        let exit_status = match tokio::time::timeout(timeout, child.wait()).await {
+
+        // Spawn concurrent readers so the pipe is drained while the child runs.
+        let stdout_fut = async { stdout.read_to_string(&mut stdout_buf).await };
+        let stderr_fut = async { stderr.read_to_string(&mut stderr_buf).await };
+
+        // Race the child exit against the timeout, but keep draining the
+        // pipes in all cases.
+        let (wait_result, _, _) = tokio::join!(
+            tokio::time::timeout(timeout, child.wait()),
+            stdout_fut,
+            stderr_fut,
+        );
+
+        let exit_status = match wait_result {
             Ok(status) => status.map_err(ToolError::Io)?,
             Err(_) => {
-                // Timeout: the child is killed by `kill_on_drop` when the
-                // handle drops. We try to kill explicitly first for a clean
-                // exit code.
                 let _ = child.kill().await;
+                let _ = child.wait().await;
                 return Err(ToolError::Other {
                     message: format!("command timed out after {timeout_ms}ms"),
                     hint: Some("increase `timeout_ms` or optimize the command".into()),
                 });
             }
         };
-
-        let mut stdout = child.stdout.take().expect("stdout was piped");
-        let mut stderr = child.stderr.take().expect("stderr was piped");
-        let mut stdout_buf = String::new();
-        let mut stderr_buf = String::new();
-        stdout
-            .read_to_string(&mut stdout_buf)
-            .await
-            .unwrap_or_default();
-        stderr
-            .read_to_string(&mut stderr_buf)
-            .await
-            .unwrap_or_default();
 
         let stdout_truncated = truncate_with_marker(&stdout_buf, MAX_OUTPUT_CHARS);
         let stderr_truncated = truncate_with_marker(&stderr_buf, MAX_OUTPUT_CHARS);

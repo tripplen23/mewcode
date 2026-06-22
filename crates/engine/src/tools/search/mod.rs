@@ -138,10 +138,15 @@ impl ToolContracts for GrepTool {
 
             for (line_num, line) in content.lines().enumerate() {
                 if re.is_match(line) {
+                    let truncated_line = if line.len() > 200 {
+                        format!("{}… [truncated]", &line[..200])
+                    } else {
+                        line.to_string()
+                    };
                     matches.push(json!({
                         "file": rel,
                         "line": line_num + 1,
-                        "content": line,
+                        "content": truncated_line,
                     }));
                     if matches.len() >= max_results {
                         truncated = true;
