@@ -19,7 +19,7 @@
 //! - L0: [`SkillRegistry::catalog_for_system_prompt`] — name +
 //!   description only, shipped in the system prompt.
 //! - L1: [`SkillRegistry::view_body`] — full `SKILL.md` body, returned
-//!   by the `skill_view` tool.
+//!   by the `skill_view` tool with no `path`.
 //! - L2: [`SkillRegistry::view_subfile`] — one sub-file under the
 //!   skill directory, returned by the `skill_view` tool with a `path`.
 
@@ -78,10 +78,9 @@ impl LoadedSkill {
 /// Where to look for skills. The order of fields here is the
 /// precedence order (later overrides earlier on name collision).
 ///
-/// The constructor is `Default::default()` and produces a config that
-/// discovers the three canonical locations (global, project, dev). The
-/// server layer augments it with `external_dirs` from `mewcode.toml`
-/// and `bundled_dir` from the engine binary's own data directory.
+/// `Default::default()` discovers nothing — call [`SkillRegistry::load`]
+/// with an explicit `SkillLoadConfig` (or [`SkillRegistry::load_defaults`]
+/// for the standard "global + project" set).
 #[derive(Debug, Clone, Default)]
 pub struct SkillLoadConfig {
     /// Where to look for *bundled* skills (the repo's own skills).
@@ -96,30 +95,6 @@ pub struct SkillLoadConfig {
     /// If true, also load `./skills/` (dev convenience). Production
     /// users should keep their skills in `.mewcode/skills/`.
     pub include_dev_dir: bool,
-}
-
-impl SkillLoadConfig {
-    /// Standard config for end users: global + project + dev, no
-    /// external dirs, no bundled dir.
-    pub fn for_user() -> Self {
-        Self {
-            bundled_dir: None,
-            external_dirs: Vec::new(),
-            project_search_start: std::env::current_dir().ok(),
-            include_dev_dir: true,
-        }
-    }
-
-    /// Standard config for the bundled server: adds a `bundled_dir` for
-    /// the skills shipped with the binary.
-    pub fn for_server(bundled_dir: PathBuf, external_dirs: Vec<PathBuf>) -> Self {
-        Self {
-            bundled_dir: Some(bundled_dir),
-            external_dirs,
-            project_search_start: std::env::current_dir().ok(),
-            include_dev_dir: true,
-        }
-    }
 }
 
 /// Registry of skills available to the engine.
@@ -138,11 +113,14 @@ impl SkillRegistry {
         Self::default()
     }
 
-    /// Load all skills from the default locations. Kept as a
-    /// convenience for callers that don't need external_dirs; new code
-    /// should prefer [`SkillRegistry::load`] with an explicit config.
+    /// Load all skills from the default locations (global + project).
+    /// New code should prefer [`SkillRegistry::load`] with an explicit
+    /// config.
     pub fn load_defaults() -> Self {
-        Self::load(&SkillLoadConfig::for_user())
+        Self::load(&SkillLoadConfig {
+            project_search_start: std::env::current_dir().ok(),
+            ..SkillLoadConfig::default()
+        })
     }
 
     /// Load skills according to `config`. Project shadows external
@@ -221,7 +199,7 @@ impl SkillRegistry {
         self.loaded_paths.push(dir.to_path_buf());
 
         let entries = match std::fs::read_dir(dir) {
-            Ok(e) => e,
+            Ok(entries) => entries,
             Err(err) => {
                 warn!(path = %dir.display(), error = %err, "could not read skills dir");
                 return;
@@ -325,7 +303,7 @@ impl SkillRegistry {
             .map(|loaded| SkillListEntry {
                 name: loaded.skill.name.clone(),
                 description: loaded.skill.description.clone(),
-                source: loaded.source.label().to_string(),
+                source: loaded.source.label(),
                 assets: loaded
                     .skill
                     .assets
@@ -336,49 +314,27 @@ impl SkillRegistry {
             .collect()
     }
 
-    /// L1 / L2 read. With no `path`, returns the skill body (with a
-    /// truncation marker if `max_chars` is hit). With `path`, returns
-    /// the sub-file content. Errors are surfaced for the model to see
-    /// and recover from.
-    pub fn view(
-        &self,
-        name: &str,
-        subpath: Option<&str>,
-        max_chars: usize,
-    ) -> Result<SkillView, SkillError> {
+    /// L1 read: return the full `SKILL.md` body. Truncation to the
+    /// per-tool response budget is the caller's responsibility (the
+    /// `skill_view` tool uses `truncate_with_marker` for that). The
+    /// body is borrowed, not cloned — the registry is the source of
+    /// truth and outlives the call.
+    pub fn view_body(&self, name: &str) -> Result<&str, SkillError> {
         let loaded = self
             .skills
             .get(name)
-            .ok_or_else(|| SkillError::MissingField {
-                path: PathBuf::from(format!("<skill:{name}>")),
-                field: "name",
-            })?;
-        match subpath {
-            None => {
-                let body = &loaded.skill.body;
-                if body.len() > max_chars {
-                    Ok(SkillView::Body {
-                        body: body[..max_chars].to_string(),
-                        truncated: true,
-                        total_chars: body.len(),
-                    })
-                } else {
-                    Ok(SkillView::Body {
-                        body: body.clone(),
-                        truncated: false,
-                        total_chars: body.len(),
-                    })
-                }
-            }
-            Some(rel) => {
-                let (resolved_rel, content) =
-                    read_skill_subfile(&loaded.skill.location, rel)?;
-                Ok(SkillView::Subfile {
-                    path: resolved_rel.to_string_lossy().to_string(),
-                    content,
-                })
-            }
-        }
+            .ok_or_else(|| SkillError::NotFound { name: name.into() })?;
+        Ok(loaded.skill.body.as_str())
+    }
+
+    /// L2 read: return one sub-file under the skill directory, sandboxed
+    /// inside it.
+    pub fn view_subfile(&self, name: &str, subpath: &str) -> Result<(PathBuf, String), SkillError> {
+        let loaded = self
+            .skills
+            .get(name)
+            .ok_or_else(|| SkillError::NotFound { name: name.into() })?;
+        read_skill_subfile(&loaded.skill.location, subpath)
     }
 }
 
@@ -390,30 +346,9 @@ pub struct SkillListEntry {
     /// When to use the skill.
     pub description: String,
     /// Where it was loaded from (`bundled`, `project`, `external`, …).
-    pub source: String,
+    pub source: &'static str,
     /// Sub-files inside the skill bundle, relative to its root.
     pub assets: Vec<String>,
-}
-
-/// Result of a `skill_view` call.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SkillView {
-    /// Level 1: full `SKILL.md` body (or the first `max_chars` of it).
-    Body {
-        /// Body text returned to the model.
-        body: String,
-        /// `true` if the body was truncated to `max_chars`.
-        truncated: bool,
-        /// Total body length in chars (before truncation).
-        total_chars: usize,
-    },
-    /// Level 2: a single sub-file.
-    Subfile {
-        /// The sub-file path that was read (relative to the skill root).
-        path: String,
-        /// The file contents.
-        content: String,
-    },
 }
 
 #[cfg(test)]
@@ -512,23 +447,28 @@ mod tests {
 
     #[test]
     fn missing_paths_are_silently_skipped() {
+        let bundled = PathBuf::from("/this/path/does/not/exist/anywhere");
+        let external = PathBuf::from("/also/not/here");
         let cfg = SkillLoadConfig {
-            bundled_dir: Some(PathBuf::from("/this/path/does/not/exist/anywhere")),
-            external_dirs: vec![PathBuf::from("/also/not/here")],
+            bundled_dir: Some(bundled.clone()),
+            external_dirs: vec![external.clone()],
             project_search_start: None,
             include_dev_dir: false,
         };
         let reg = SkillRegistry::load(&cfg);
         // No crash; registry is empty.
         assert!(reg.is_empty());
-        // 2 missing: bundled + the global `~/.config/mewcode/skills` (which
-        // also may or may not exist on a test machine). The contract is
-        // "non-existent paths are silently skipped", not "exactly N
-        // missing", so we assert at-least-2.
+        // The contract: every seed path we couldn't find is in
+        // `missing_paths`. The test stays deterministic even if the
+        // dev machine happens to have `~/.config/mewcode/skills`.
+        let missing = reg.missing_paths();
         assert!(
-            reg.missing_paths().len() >= 2,
-            "expected >= 2 missing paths, got {}",
-            reg.missing_paths().len()
+            missing.contains(&bundled),
+            "expected {bundled:?} in missing_paths, got {missing:?}"
+        );
+        assert!(
+            missing.contains(&external),
+            "expected {external:?} in missing_paths, got {missing:?}"
         );
     }
 
@@ -550,16 +490,11 @@ mod tests {
         };
         let reg = SkillRegistry::load(&cfg);
 
-        let view = reg
-            .view("alpha", Some("references/checklist.md"), 10_000)
+        let (path, content) = reg
+            .view_subfile("alpha", "references/checklist.md")
             .unwrap();
-        match view {
-            SkillView::Subfile { path, content } => {
-                assert_eq!(path, "references/checklist.md");
-                assert!(content.contains("step 1"));
-            }
-            other => panic!("expected Subfile, got {other:?}"),
-        }
+        assert_eq!(path, PathBuf::from("references/checklist.md"));
+        assert!(content.contains("step 1"));
     }
 
     #[test]
@@ -578,7 +513,7 @@ mod tests {
         let reg = SkillRegistry::load(&cfg);
 
         let err = reg
-            .view("alpha", Some("../escape.md"), 10_000)
+            .view_subfile("alpha", "../escape.md")
             .expect_err("must reject ..");
         assert!(matches!(err, SkillError::InvalidSubpath { .. }));
     }

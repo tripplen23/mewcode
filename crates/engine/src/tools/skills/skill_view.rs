@@ -2,25 +2,20 @@
 //! (one sub-file). Replaces the previous `use_skill` tool, which
 //! only supported Level 1.
 //!
-//! Without a `path`, returns the skill body (truncated to a budget
-//! with a marker so the model knows more is available). With a
-//! `path`, returns one sub-file relative to the skill root. The path
-//! is sandboxed to the skill directory and cannot escape it.
+//! Without a `path`, returns the skill body truncated to
+//! `DEFAULT_MAX_RESPONSE_CHARS` (with a marker so the model knows
+//! more is available). With a `path`, returns one sub-file relative
+//! to the skill root. The path is sandboxed to the skill directory
+//! and cannot escape it.
 
 use async_trait::async_trait;
 use mewcode_protocol::{
-    SkillError, ToolAnnotations, ToolContracts, ToolDescriptor, ToolError, ToolExample, ToolOutput,
-    truncate_with_marker,
+    DEFAULT_MAX_RESPONSE_CHARS, SkillError, ToolAnnotations, ToolContracts, ToolDescriptor,
+    ToolError, ToolExample, ToolOutput, truncate_with_marker,
 };
 use serde_json::{Value, json};
 
-use crate::skills::SkillView;
 use crate::tools::Skills;
-
-/// Default cap on body length returned by Level 1 reads. ~100 kB is
-/// large enough for the biggest real-world skill bodies and small
-/// enough to keep the per-turn context budget honest.
-const DEFAULT_MAX_BODY_CHARS: usize = 100_000;
 
 /// `skill_view` tool.
 pub struct SkillViewTool {
@@ -77,7 +72,7 @@ impl ToolContracts for SkillViewTool {
                     input: json!({ "name": "review-pr", "path": "references/checklist.md" }),
                 },
             ],
-            max_response_chars: DEFAULT_MAX_BODY_CHARS,
+            max_response_chars: DEFAULT_MAX_RESPONSE_CHARS,
         }
     }
 
@@ -89,68 +84,74 @@ impl ToolContracts for SkillViewTool {
                 ToolError::invalid_input("missing `name`", "pass a string `name` field")
             })?
             .to_string();
-        let path = input
-            .get("path")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+        let path = input.get("path").and_then(|v| v.as_str());
 
-        match self
-            .skills
-            .view(&name, path.as_deref(), DEFAULT_MAX_BODY_CHARS)
-        {
-            Ok(SkillView::Body {
-                body,
-                truncated,
-                total_chars,
-            }) => {
-                // Apply the same truncation marker convention the rest
-                // of the tool surface uses (truncate_with_marker) so
-                // the model has a consistent signal.
-                let body_with_marker = if truncated {
-                    truncate_with_marker(&body, DEFAULT_MAX_BODY_CHARS)
+        match path {
+            None => {
+                let body = self.skills.view_body(&name).map_err(|e| match e {
+                    SkillError::NotFound { .. } => ToolError::Rejected {
+                        message: format!("no skill named '{name}' is installed"),
+                        hint: Some(
+                            "check the `Available skills` section of the system prompt or call skills_list() to see valid names"
+                                .into(),
+                        ),
+                    },
+                    other => ToolError::Other {
+                        message: other.to_string(),
+                        hint: Some("see the skill error type for the underlying cause".into()),
+                    },
+                })?;
+                let truncated = body.chars().count() > DEFAULT_MAX_RESPONSE_CHARS;
+                let body_out = if truncated {
+                    truncate_with_marker(body, DEFAULT_MAX_RESPONSE_CHARS)
                 } else {
-                    body
+                    body.to_string()
                 };
                 Ok(ToolOutput(json!({
                     "name": name,
                     "level": 1,
-                    "body": body_with_marker,
+                    "body": body_out,
                     "truncated": truncated,
-                    "total_chars": total_chars,
                     "instruction": "follow the skill's instructions above to complete the user's request",
                 })))
             }
-            Ok(SkillView::Subfile { path, content }) => Ok(ToolOutput(json!({
-                "name": name,
-                "level": 2,
-                "path": path,
-                "content": content,
-            }))),
-            Err(SkillError::MissingField { .. }) => Err(ToolError::Rejected {
-                message: format!("no skill named '{name}' is installed"),
-                hint: Some(
-                    "check the `Available skills` section of the system prompt or call skills_list() to see valid names"
-                        .into(),
-                ),
-            }),
-            Err(SkillError::InvalidSubpath { path, reason }) => Err(ToolError::Rejected {
-                message: format!("invalid `path` '{path}': {reason}"),
-                hint: Some(
-                    "the path must be relative to the skill root and must not contain `..`"
-                        .into(),
-                ),
-            }),
-            Err(SkillError::Read { path, source }) => Err(ToolError::Rejected {
-                message: format!("could not read {}: {}", path.display(), source),
-                hint: Some(
-                    "call skills_list() to confirm the path exists; the sub-file may have been removed"
-                        .into(),
-                ),
-            }),
-            Err(other) => Err(ToolError::Other {
-                message: other.to_string(),
-                hint: Some("see the skill error type for the underlying cause".into()),
-            }),
+            Some(rel) => {
+                let (resolved, content) = self.skills.view_subfile(&name, rel).map_err(|e| {
+                    match e {
+                        SkillError::NotFound { .. } => ToolError::Rejected {
+                            message: format!("no skill named '{name}' is installed"),
+                            hint: Some(
+                                "check the `Available skills` section of the system prompt or call skills_list() to see valid names"
+                                    .into(),
+                            ),
+                        },
+                        SkillError::InvalidSubpath { path, reason } => ToolError::Rejected {
+                            message: format!("invalid `path` '{path}': {reason}"),
+                            hint: Some(
+                                "the path must be relative to the skill root and must not contain `..`"
+                                    .into(),
+                            ),
+                        },
+                        SkillError::Read { path, source } => ToolError::Rejected {
+                            message: format!("could not read {}: {}", path.display(), source),
+                            hint: Some(
+                                "call skills_list() to confirm the path exists; the sub-file may have been removed"
+                                    .into(),
+                            ),
+                        },
+                        other => ToolError::Other {
+                            message: other.to_string(),
+                            hint: Some("see the skill error type for the underlying cause".into()),
+                        },
+                    }
+                })?;
+                Ok(ToolOutput(json!({
+                    "name": name,
+                    "level": 2,
+                    "path": resolved.to_string_lossy(),
+                    "content": content,
+                })))
+            }
         }
     }
 }

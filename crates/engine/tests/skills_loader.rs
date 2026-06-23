@@ -9,7 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use mewcode_engine::skills::{SkillRegistry, SkillSource, SkillView};
+use mewcode_engine::skills::{SkillRegistry, SkillSource};
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -111,15 +111,19 @@ fn missing_directory_is_recorded() {
 }
 
 #[test]
-fn view_returns_full_prompt() {
+fn view_body_returns_full_prompt() {
     let tmp = tempdir();
     write_skill(tmp.path(), "x", "desc");
     let mut reg = SkillRegistry::new();
     reg.load_dir(tmp.path(), SkillSource::Global);
 
-    let view = reg.view("x", None, 10_000).unwrap();
-    match view {
-        SkillView::Body { body, .. } => assert!(body.contains("# x")),
-        other => panic!("expected Body, got {other:?}"),
-    }
+    let body = reg.view_body("x").unwrap();
+    assert!(body.contains("# x"));
+}
+
+#[test]
+fn view_body_missing_skill_returns_not_found() {
+    let reg = SkillRegistry::new();
+    let err = reg.view_body("does-not-exist").expect_err("missing");
+    assert!(matches!(err, mewcode_protocol::SkillError::NotFound { .. }));
 }

@@ -19,26 +19,26 @@ fn expand_path(raw: &str) -> String {
             s = home.display().to_string();
         }
     }
-    // ${VAR} substitution. Greedy from right is fine because path
-    // separators don't appear inside variable names.
-    let mut result = String::new();
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if i + 1 < bytes.len() && bytes[i] == b'$' && bytes[i + 1] == b'{' {
-            if let Some(end) = s[i + 2..].find('}') {
-                let var = &s[i + 2..i + 2 + end];
-                match std::env::var(var) {
-                    Ok(v) => result.push_str(&v),
-                    Err(_) => result.push_str(&s[i..i + 2 + end + 1]),
-                }
-                i += 2 + end + 1;
-                continue;
+    // ${VAR} substitution. Char-based walk so non-ASCII bytes
+    // (e.g. `café` in a path) survive intact.
+    let mut result = String::with_capacity(s.len());
+    let mut rest = s.as_str();
+    while let Some(start) = rest.find("${") {
+        result.push_str(&rest[..start]);
+        let after = &rest[start + 2..];
+        if let Some(end) = after.find('}') {
+            let var = &after[..end];
+            match std::env::var(var) {
+                Ok(v) => result.push_str(&v),
+                Err(_) => result.push_str(&rest[start..start + 2 + end + 1]),
             }
+            rest = &after[end + 1..];
+        } else {
+            result.push_str(&rest[start..]);
+            return result;
         }
-        result.push(s.as_bytes()[i] as char);
-        i += 1;
     }
+    result.push_str(rest);
     result
 }
 

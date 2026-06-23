@@ -31,11 +31,6 @@ pub const GLOBAL_SKILLS_DIR: &str = "skills";
 /// Subdirectory (under the project root) for per-project skills.
 pub const PROJECT_SKILLS_DIR: &str = ".mewcode/skills";
 
-/// Conventional sub-folder names a skill bundle may contain. The engine
-/// does not interpret these — they are exposed via `skill_view(name,
-/// path)` so the model can navigate them on demand.
-pub const CONVENTIONAL_SUBDIRS: &[&str] = &["references", "scripts", "assets", "templates"];
-
 /// A single skill.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Skill {
@@ -79,11 +74,11 @@ impl Skill {
 
 /// Read a sub-file from a skill directory by its path relative to the
 /// skill root. The path is sandboxed inside the skill directory and
-/// cannot escape it (e.g. `..` segments are rejected).
+/// cannot escape it (e.g. `..` segments are rejected, and the resolved
+/// path is canonicalized so symlink escapes are caught).
 ///
 /// Used by the `skill_view` tool's Level 2 path. Returns the file
-/// contents as a string along with the canonical relative path that
-/// was read (handy for the model to confirm what it got).
+/// contents together with the requested relative path.
 pub fn read_skill_subfile(
     skill_root: &Path,
     relative_path: &str,
@@ -95,7 +90,10 @@ pub fn read_skill_subfile(
             reason: "must be relative to the skill root".into(),
         });
     }
-    if rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+    if rel
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
         return Err(SkillError::InvalidSubpath {
             path: relative_path.into(),
             reason: "must not contain `..` segments".into(),
@@ -193,6 +191,12 @@ pub enum SkillError {
         path: PathBuf,
         /// Which field is missing.
         field: &'static str,
+    },
+    /// The named skill is not installed.
+    #[error("no skill named '{name}' is installed")]
+    NotFound {
+        /// The requested skill name.
+        name: String,
     },
     /// The `skill_view` path argument was rejected.
     #[error("invalid skill subpath '{path}': {reason}")]
