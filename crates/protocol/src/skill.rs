@@ -99,6 +99,15 @@ pub fn read_skill_subfile(
             reason: "must not contain `..` segments".into(),
         });
     }
+    // Reject an in-root `SKILL.md` — that file is the L1 body and
+    // must go through `skill_view` with no `path`. Allowing it as an
+    // L2 sub-file would bypass the L1 response budget.
+    if rel == Path::new(SKILL_FILE) {
+        return Err(SkillError::InvalidSubpath {
+            path: relative_path.into(),
+            reason: format!("`{SKILL_FILE}` is loaded via L1, not as a sub-file"),
+        });
+    }
     let resolved = skill_root.join(rel);
     let canonical = std::fs::canonicalize(&resolved).map_err(|e| SkillError::Read {
         path: resolved.clone(),
@@ -134,10 +143,11 @@ fn list_skill_assets(skill_dir: &Path, skill_md: &Path) -> Vec<PathBuf> {
         if p == skill_md {
             continue;
         }
-        // Walk into conventional sub-folders (references/, scripts/, …)
-        // so the catalog can advertise the full tree.
+        // Walk into sub-folders (references/, scripts/, …) so the
+        // catalog can advertise the full tree. Use `skill_dir` as the
+        // strip prefix so paths stay relative to the skill root.
         if p.is_dir() {
-            collect_files_recursive(&p, &p, &mut assets);
+            collect_files_recursive(skill_dir, &p, &mut assets);
         } else if p.is_file() {
             if let Ok(rel) = p.strip_prefix(skill_dir) {
                 assets.push(rel.to_path_buf());

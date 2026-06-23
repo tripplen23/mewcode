@@ -78,10 +78,10 @@ impl LoadedSkill {
 /// Where to look for skills. The order of fields here is the
 /// precedence order (later overrides earlier on name collision).
 ///
-/// `Default::default()` discovers nothing — call [`SkillRegistry::load`]
-/// with an explicit `SkillLoadConfig` (or [`SkillRegistry::load_defaults`]
-/// for the standard "global + project" set).
-#[derive(Debug, Clone, Default)]
+/// `Default::default()` produces a config that discovers the standard
+/// locations (global + project), so `SkillRegistry::load(&config)`
+/// works out of the box.
+#[derive(Debug, Clone)]
 pub struct SkillLoadConfig {
     /// Where to look for *bundled* skills (the repo's own skills).
     /// These are the lowest precedence.
@@ -95,6 +95,21 @@ pub struct SkillLoadConfig {
     /// If true, also load `./skills/` (dev convenience). Production
     /// users should keep their skills in `.mewcode/skills/`.
     pub include_dev_dir: bool,
+}
+
+impl Default for SkillLoadConfig {
+    /// Discovers the standard locations: `~/.config/mewcode/skills/`
+    /// (global) and `<cwd>/.mewcode/skills/` (project, walking up).
+    /// The dev `./skills/` dir is not included; opt in with
+    /// `include_dev_dir: true` if you want it.
+    fn default() -> Self {
+        Self {
+            bundled_dir: None,
+            external_dirs: Vec::new(),
+            project_search_start: std::env::current_dir().ok(),
+            include_dev_dir: false,
+        }
+    }
 }
 
 /// Registry of skills available to the engine.
@@ -115,16 +130,15 @@ impl SkillRegistry {
 
     /// Load all skills from the default locations (global + project).
     /// New code should prefer [`SkillRegistry::load`] with an explicit
-    /// config.
+    /// config (e.g. to add `external_dirs` or `bundled_dir`).
     pub fn load_defaults() -> Self {
-        Self::load(&SkillLoadConfig {
-            project_search_start: std::env::current_dir().ok(),
-            ..SkillLoadConfig::default()
-        })
+        Self::load(&SkillLoadConfig::default())
     }
 
-    /// Load skills according to `config`. Project shadows external
-    /// shadows bundled on name collision.
+    /// Load skills according to `config`. Later sources override
+    /// earlier ones on name collision — bundled is lowest, dev is
+    /// highest. Project skills intentionally shadow global installs
+    /// so a repo can override a shared skill locally.
     pub fn load(config: &SkillLoadConfig) -> Self {
         let mut reg = Self::new();
 
@@ -138,17 +152,18 @@ impl SkillRegistry {
             reg.load_dir(dir, SkillSource::External);
         }
 
-        // 3. Project (walks up from the search start).
+        // 3. Global (`~/.config/mewcode/skills`). Loaded before project
+        //    so project can shadow global on name collision.
+        if let Some(home) = dirs::home_dir() {
+            let global = home.join(".config").join("mewcode").join(GLOBAL_SKILLS_DIR);
+            reg.load_dir(&global, SkillSource::Global);
+        }
+
+        // 4. Project (walks up from the search start). Shadows global.
         if let Some(start) = config.project_search_start.as_deref() {
             if let Some(p) = Self::find_project_skills_dir_from(start) {
                 reg.load_dir(&p, SkillSource::Project);
             }
-        }
-
-        // 4. Global (`~/.config/mewcode/skills`).
-        if let Some(home) = dirs::home_dir() {
-            let global = home.join(".config").join("mewcode").join(GLOBAL_SKILLS_DIR);
-            reg.load_dir(&global, SkillSource::Global);
         }
 
         // 5. Dev convenience (`./skills/`).
@@ -446,6 +461,33 @@ mod tests {
     }
 
     #[test]
+    fn project_shadows_global() {
+        // `~/.config/mewcode/skills` is the global install; the
+        // project dir shadows it. We can't easily mock the home
+        // directory, so this test uses `external_dirs` as a stand-in
+        // for global and asserts the project-shadows-earlier
+        // contract holds. (CodeRabbit review on PR #11.)
+        let external = fresh_dir("global-stand-in");
+        let project = fresh_dir("project");
+        write_skill(&external, "shared", "from global");
+        let project_skills = project.join(PROJECT_SKILLS_DIR);
+        std::fs::create_dir_all(&project_skills).unwrap();
+        write_skill(&project_skills, "shared", "from project");
+
+        let cfg = SkillLoadConfig {
+            bundled_dir: None,
+            // External loaded first, so project (loaded later) should win.
+            external_dirs: vec![external],
+            project_search_start: Some(project),
+            include_dev_dir: false,
+        };
+        let reg = SkillRegistry::load(&cfg);
+        let loaded = reg.get("shared").unwrap();
+        assert_eq!(loaded.skill.description, "from project");
+        assert_eq!(loaded.source, SkillSource::Project);
+    }
+
+    #[test]
     fn missing_paths_are_silently_skipped() {
         let bundled = PathBuf::from("/this/path/does/not/exist/anywhere");
         let external = PathBuf::from("/also/not/here");
@@ -519,6 +561,37 @@ mod tests {
     }
 
     #[test]
+    fn view_subfile_rejects_skill_md() {
+        // SKILL.md is the L1 body; reading it as an L2 sub-file
+        // would bypass the response budget. (CodeRabbit review.)
+        let project = fresh_dir("skillmd");
+        let project_skills = project.join(PROJECT_SKILLS_DIR);
+        std::fs::create_dir_all(&project_skills).unwrap();
+        write_skill(&project_skills, "alpha", "alpha skill");
+
+        let cfg = SkillLoadConfig {
+            bundled_dir: None,
+            external_dirs: vec![],
+            project_search_start: Some(project),
+            include_dev_dir: false,
+        };
+        let reg = SkillRegistry::load(&cfg);
+
+        let err = reg
+            .view_subfile("alpha", "SKILL.md")
+            .expect_err("SKILL.md must be rejected as sub-file");
+        match err {
+            SkillError::InvalidSubpath { reason, .. } => {
+                assert!(
+                    reason.contains("L1"),
+                    "reason should mention L1; got {reason}"
+                );
+            }
+            other => panic!("expected InvalidSubpath, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn list_for_tool_returns_sorted_entries() {
         let project = fresh_dir("list");
         let project_skills = project.join(PROJECT_SKILLS_DIR);
@@ -537,5 +610,42 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].name, "alpha");
         assert_eq!(entries[1].name, "zulu");
+    }
+
+    #[test]
+    fn list_for_tool_assets_keep_subdir_prefix() {
+        // CodeRabbit review (PR #11): the recursive asset walker
+        // used to strip the conventional subdir prefix, so
+        // `references/checklist.md` was advertised as `checklist.md`.
+        // After the fix, paths stay relative to the skill root.
+        let project = fresh_dir("assets");
+        let project_skills = project.join(PROJECT_SKILLS_DIR);
+        std::fs::create_dir_all(&project_skills).unwrap();
+        let dir = write_skill(&project_skills, "alpha", "alpha skill");
+        let refs = dir.join("references");
+        fs::create_dir_all(&refs).unwrap();
+        fs::write(refs.join("checklist.md"), "- step 1\n").unwrap();
+        let templates = dir.join("templates");
+        fs::create_dir_all(&templates).unwrap();
+        fs::write(templates.join("comment.md"), "> template\n").unwrap();
+
+        let cfg = SkillLoadConfig {
+            bundled_dir: None,
+            external_dirs: vec![],
+            project_search_start: Some(project),
+            include_dev_dir: false,
+        };
+        let reg = SkillRegistry::load(&cfg);
+        let entry = reg.list_for_tool().into_iter().next().unwrap();
+        assert!(
+            entry.assets.iter().any(|a| a == "references/checklist.md"),
+            "expected `references/checklist.md`, got {:?}",
+            entry.assets
+        );
+        assert!(
+            entry.assets.iter().any(|a| a == "templates/comment.md"),
+            "expected `templates/comment.md`, got {:?}",
+            entry.assets
+        );
     }
 }
