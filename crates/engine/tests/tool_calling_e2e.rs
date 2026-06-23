@@ -58,7 +58,7 @@ async fn rig_tools_from_default_registry_is_non_empty() {
     let project = fresh_project();
     let skills = Arc::new(SkillRegistry::load_defaults());
     let ctx = ProjectContext::new(project.clone());
-    let registry = default_registry(ctx, skills, Some(store));
+    let registry = default_registry(ctx, skills, Some(store), mewcode_protocol::Mode::Build);
 
     let tools = rig_tools(&registry);
     assert!(

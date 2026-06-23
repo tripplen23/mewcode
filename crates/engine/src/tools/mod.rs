@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use mewcode_protocol::{ToolContracts, ToolDescriptor, ToolError, ToolOutput};
+use mewcode_protocol::{Mode, ToolContracts, ToolDescriptor, ToolError, ToolOutput};
 use serde_json::Value;
 
 use crate::memory::MemoryStore;
@@ -24,10 +24,14 @@ use crate::skills::SkillRegistry;
 pub mod adapter;
 mod fs;
 mod memory;
+mod search;
+mod shell;
 mod skills;
 
-pub use fs::{GlobTool, ListDirectoryTool, ReadFileTool};
+pub use fs::{EditFileTool, GlobTool, ListDirectoryTool, ReadFileTool, WriteFileTool};
 pub use memory::MewcodeMemoryTool;
+pub use search::GrepTool;
+pub use shell::BashTool;
 pub use skills::UseSkillTool;
 
 /// Engine-local alias for the shared skill registry. We keep the
@@ -106,19 +110,38 @@ impl ProjectContext {
     }
 }
 
-/// Build the default tool registry.
+/// Build the default tool registry for the given mode.
+///
+/// In `Mode::Build` all tools are registered. In `Mode::Plan` only
+/// read-only, non-destructive tools are registered — write tools
+/// (`write_file`, `edit_file`, `bash`, `mewcode_memory`) are excluded
+/// so the model physically cannot mutate state. A model that tries to
+/// call a filtered tool gets the same `ToolNotFound` error as if it
+/// were unregistered.
 pub fn default_registry(
     ctx: ProjectContext,
     skills: Skills,
     memory: Option<MemoryStore>,
+    mode: Mode,
 ) -> ToolRegistry {
     let mut reg = ToolRegistry::new();
+
+    // Read-only tools — always available.
     reg.register(Arc::new(ReadFileTool::new(ctx.clone())));
     reg.register(Arc::new(ListDirectoryTool::new(ctx.clone())));
-    reg.register(Arc::new(GlobTool::new(ctx)));
+    reg.register(Arc::new(GlobTool::new(ctx.clone())));
+    reg.register(Arc::new(GrepTool::new(ctx.clone())));
     reg.register(Arc::new(UseSkillTool::new(skills)));
-    if let Some(store) = memory {
-        reg.register(Arc::new(MewcodeMemoryTool::new(store)));
+
+    // `mewcode_memory` persists to disk (WRITE_LOCAL) — gate it with the writers.
+    if mode.allows_writes() {
+        if let Some(store) = memory {
+            reg.register(Arc::new(MewcodeMemoryTool::new(store)));
+        }
+        reg.register(Arc::new(WriteFileTool::new(ctx.clone())));
+        reg.register(Arc::new(EditFileTool::new(ctx.clone())));
+        reg.register(Arc::new(BashTool::new(ctx)));
     }
+
     reg
 }

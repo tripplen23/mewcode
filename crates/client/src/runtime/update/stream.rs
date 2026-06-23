@@ -88,5 +88,5 @@ fn commit_assistant_message(st: StreamingState, model: ModelId) -> Message {
             }));
         }
     }
-    Message::assistant(parts, model.provider_id())
+    Message::assistant(parts, model.as_str())
 }

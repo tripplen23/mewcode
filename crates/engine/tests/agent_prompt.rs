@@ -24,14 +24,19 @@ fn build_mode_includes_tool_descriptors() {
         ProjectContext::new(std::env::temp_dir()),
         skills_for_registry,
         None,
+        Mode::Build,
     ));
     let prompt = build_system_prompt(Mode::Build, &skills, &tools);
-    // The default registry has the 4 read-only tools + use_skill.
-    // (write_file / edit_file / bash land in later phases.)
+    // Build mode registry: read_file, list_directory, glob, grep, use_skill,
+    // write_file, edit_file, bash, mewcode_memory.
     assert!(prompt.contains("### `read_file`"));
     assert!(prompt.contains("### `list_directory`"));
     assert!(prompt.contains("### `glob`"));
+    assert!(prompt.contains("### `grep`"));
     assert!(prompt.contains("### `use_skill`"));
+    assert!(prompt.contains("### `write_file`"));
+    assert!(prompt.contains("### `edit_file`"));
+    assert!(prompt.contains("### `bash`"));
 }
 
 #[test]

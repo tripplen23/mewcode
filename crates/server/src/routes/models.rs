@@ -27,7 +27,7 @@ pub async fn list_models() -> Json<Vec<ModelEntry>> {
     let entries = ModelId::ALL
         .iter()
         .map(|m| ModelEntry {
-            id: m.provider_id().to_string(),
+            id: m.as_str().to_string(),
             display_name: m.display_name(),
             kind: m.kind(),
         })

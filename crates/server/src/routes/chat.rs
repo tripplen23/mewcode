@@ -46,7 +46,8 @@ pub async fn chat_stream(
     let (stx, srx) = tokio::sync::mpsc::channel::<StreamEvent>(64);
 
     let skills = Arc::new(SkillRegistry::load_defaults());
-    // Build a real tool registry: read-only tools + use_skill + mewcode_memory.
+    // Build a real tool registry: read-only tools + memory + use_skill.
+    // Write tools (write_file, edit_file, bash) only in Build mode.
     // The project root defaults to the server's CWD — future phases can make
     // this configurable per session.
     let root = std::env::current_dir()
@@ -57,6 +58,7 @@ pub async fn chat_stream(
         ctx,
         skills.clone(),
         Some(state.memory.clone()),
+        req.mode,
     ));
 
     let harness = Harness::new(req.model, req.mode, skills, tools)
@@ -121,7 +123,7 @@ pub async fn chat_stream(
         // which is worse than a missing one.
         if finished && !reply.is_empty() {
             let message =
-                Message::assistant(vec![MessagePart::Text { text: reply }], model.provider_id());
+                Message::assistant(vec![MessagePart::Text { text: reply }], model.as_str());
             if let Err(e) = store.append_message(session_id, message).await {
                 tracing::warn!(error = %e, "failed to persist assistant message");
             }
