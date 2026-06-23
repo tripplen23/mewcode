@@ -99,8 +99,8 @@ impl ModelId {
         }
     }
 
-    /// Provider model id sent to the OpenCode Go API.
-    pub fn provider_id(self) -> &'static str {
+    /// Wire id of the model sent to the OpenCode Go API.
+    pub fn as_str(self) -> &'static str {
         match self {
             ModelId::MiniMaxM3 => Self::MINIMAX_M3_ID,
             ModelId::MiniMaxM27 => "minimax-m2.7",
@@ -158,7 +158,7 @@ impl FromStr for ModelId {
         Self::ALL
             .iter()
             .copied()
-            .find(|m| m.provider_id() == s || m.display_name().eq_ignore_ascii_case(s))
+            .find(|m| m.as_str() == s || m.display_name().eq_ignore_ascii_case(s))
             .ok_or_else(|| ModelIdParseError(s.to_string()))
     }
 }

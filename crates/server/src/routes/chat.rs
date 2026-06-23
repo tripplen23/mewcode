@@ -123,7 +123,7 @@ pub async fn chat_stream(
         // which is worse than a missing one.
         if finished && !reply.is_empty() {
             let message =
-                Message::assistant(vec![MessagePart::Text { text: reply }], model.provider_id());
+                Message::assistant(vec![MessagePart::Text { text: reply }], model.as_str());
             if let Err(e) = store.append_message(session_id, message).await {
                 tracing::warn!(error = %e, "failed to persist assistant message");
             }

@@ -15,7 +15,7 @@ use proptest::prelude::*;
 /// Build a `ModelEntry` whose `id` is the model's known provider id.
 fn entry_for(model: ModelId) -> ModelEntry {
     ModelEntry {
-        id: model.provider_id().to_string(),
+        id: model.as_str().to_string(),
         display_name: model.display_name().to_string(),
         kind: model.kind(),
     }

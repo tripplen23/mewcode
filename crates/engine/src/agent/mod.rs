@@ -7,8 +7,7 @@
 //! - streaming translation from Rig items to [`StreamEvent`]s ([`stream`])
 //!
 //! The [`Harness`](crate::harness::Harness) consumes an [`Agent`] each turn:
-//! it builds the system prompt (optionally injecting memory), creates an
-//! [`Agent`], and delegates execution.
+//! it builds the system prompt, creates an [`Agent`], and delegates execution.
 
 mod prompt;
 mod stream;
@@ -21,17 +20,14 @@ pub use self::prompt::build_system_prompt;
 use crate::error::EngineError;
 use crate::provider::Provider;
 
-/// Output token cap for a single turn.
 pub(crate) const DEFAULT_MAX_TOKENS: u64 = 4096;
 
-/// Max internal Rig agent turns.
 const DEFAULT_MAX_TURNS: usize = 10;
 
 /// A configured agent ready to run one turn.
 ///
 /// The agent is intentionally built per-turn: the system prompt may change
-/// between turns (e.g., injected memory), and tool wrappers are cheap to
-/// reconstruct from the registry.
+/// between turns, and tool wrappers are cheap to reconstruct from the registry.
 pub struct Agent {
     provider: Provider,
     model: ModelId,
@@ -74,24 +70,19 @@ impl Agent {
 
     /// Run one user prompt through the configured Rig agent, streaming events
     /// through `tx` and returning the full assistant reply.
-    ///
-    /// On the Anthropic arm the `CompletionModel` is built directly with
-    /// `with_automatic_caching()` so the system prompt + tool descriptors
-    /// are cached across sub-turns — `client().agent(...)` would build a
-    /// fresh model with caching off, burning tokens on every sub-turn.
     pub async fn run_turn(
         self,
         user_text: String,
         history: Vec<rig_core::completion::Message>,
         tx: &mpsc::Sender<StreamEvent>,
     ) -> Result<String, EngineError> {
-        let model_id = self.model.provider_id();
+        let model_id = self.model.as_str();
         match &self.provider {
             Provider::Anthropic(p) => {
                 let model = p
                     .client()
                     .completion_model(model_id)
-                    .with_automatic_caching();
+                    .with_automatic_caching_1h();
                 let agent = rig_core::agent::AgentBuilder::new(model)
                     .name("mewcode")
                     .preamble(&self.system_prompt)

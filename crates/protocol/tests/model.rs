@@ -1,12 +1,14 @@
 //! Integration tests for `mewcode_protocol::model`.
 
+use std::collections::HashSet;
+
 use mewcode_protocol::ModelId;
 
 #[test]
-fn all_have_unique_provider_ids() {
-    let mut seen = std::collections::HashSet::new();
+fn all_have_unique_strs() {
+    let mut seen = HashSet::new();
     for m in ModelId::ALL {
-        assert!(seen.insert(m.provider_id()), "duplicate: {:?}", m);
+        assert!(seen.insert(m.as_str()), "duplicate: {:?}", m);
     }
 }
 
