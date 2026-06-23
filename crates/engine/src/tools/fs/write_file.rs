@@ -102,9 +102,7 @@ impl ToolContracts for WriteFileTool {
 
         // Safety gate: refuse to overwrite a non-empty file unless the caller
         // explicitly passes `overwrite: true`. Empty files and non-existent
-        // files are safe to write without the flag. We use `metadata.len()`
-        // (not `read_to_string`) so binary files and unreadable files still
-        // count as non-empty and remain protected by the safety gate.
+        // files are safe to write without the flag.
         if resolved.exists() {
             let len = std::fs::metadata(&resolved).map(|m| m.len()).unwrap_or(0);
             if len > 0 && !overwrite {

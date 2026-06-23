@@ -133,9 +133,7 @@ pub fn default_registry(
     reg.register(Arc::new(GrepTool::new(ctx.clone())));
     reg.register(Arc::new(UseSkillTool::new(skills)));
 
-    // Write-capable tools — only in Build mode. `mewcode_memory` is
-    // `WRITE_LOCAL` (it can persist facts to disk) so it must be gated
-    // the same way as `write_file` / `edit_file` / `bash`.
+    // `mewcode_memory` persists to disk (WRITE_LOCAL) — gate it with the writers.
     if mode.allows_writes() {
         if let Some(store) = memory {
             reg.register(Arc::new(MewcodeMemoryTool::new(store)));
