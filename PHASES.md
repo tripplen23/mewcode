@@ -319,3 +319,93 @@ pass.
 
 ## Phase 16 — Hardening
 - Error toasts, Ctrl-C graceful shutdown, retries, command palette
+- (See also Phase 17 — Ctrl-C graceful shutdown is shared with that work)
+
+## Phase 17 — Trace ingestion latency
+
+Discovered while dogfooding PR #10: traces take ~13 minutes to appear in
+Langfuse, even though the BatchSpanProcessor is configured (via
+`opentelemetry-langfuse` 0.6.1) and there is no runtime mismatch. Three
+root causes were confirmed by reading the source of `opentelemetry_sdk-0.31.0`
+(`span_processor.rs`, `runtime.rs`), `opentelemetry-langfuse-0.6.1`
+(`exporter.rs`, `endpoint.rs`, `auth.rs`), and Langfuse's own FAQ at
+[langfuse.com/faq/all/explore-observations-in-v4][langfuse-v4-faq].
+
+**Root cause 1 — missing `x-langfuse-ingestion-version: 4` header**
+- Langfuse's Fast Preview path (sub-5s) requires this header; without
+  it, traces land in the batched S3 ingestion path which Langfuse's own
+  docs describe as "multi-minute delays" before the unified table
+  updates
+- The `opentelemetry-langfuse-0.6.1` crate only injects the
+  `Authorization` header (`exporter.rs:185-199`); it does not set
+  `x-langfuse-ingestion-version`. This is the dominant cause of the
+  13-minute lag observed on PR #10 (prompt at 16:44, visible at 16:57)
+- Fix: pass the header via `OTEL_EXPORTER_OTLP_HEADERS` (simplest) or
+  inject it on the inner OTLP exporter builder (cleaner, no env var
+  coupling). The langfuse builder doesn't expose a header setter, so
+  the env var is the path of least resistance until upstream supports it
+
+**Root cause 2 — unconfigured `BatchConfig` defaults**
+- `crates/server/src/main.rs:116` calls
+  `BatchSpanProcessor::builder(exporter, Tokio).build()` with no
+  `BatchConfigBuilder`, so all OTel spec defaults apply:
+  - `scheduled_delay` = 5 s (the per-tick floor)
+  - `max_export_timeout` = 30 s (per failed attempt)
+  - `max_export_batch_size` = 512, `max_queue_size` = 2048
+- Sources: OTel spec env-var table, `opentelemetry-rust`
+  `span_processor.rs` unit tests asserting these exact values
+- Fix: tune via `BatchConfigBuilder`:
+  - `scheduled_delay = 2 s` (down from 5 s)
+  - `max_export_timeout = 10 s` (down from 30 s)
+  - `max_export_batch_size = 256` (smaller batch = faster flush)
+  - `max_queue_size = 4096` (larger buffer to absorb spikes)
+- Or set the env vars: `OTEL_BSP_SCHEDULE_DELAY=2000`,
+  `OTEL_BSP_EXPORT_TIMEOUT=10000`
+
+**Root cause 3 — no graceful shutdown + no per-turn `force_flush`**
+- `provider.shutdown()` is only called after `axum::serve(...).await`
+  returns (`main.rs:45-49`); there is no `tokio::signal::ctrl_c()` /
+  `Drop` impl, so Ctrl-C drops the BatchSpanProcessor worker mid-flight
+  and queued spans are lost (separate bug: traces never arrive)
+- There is no `force_flush()` anywhere — not at end of
+  `Harness::run_turn`, not on SSE close, not in any route. The 5 s
+  ticker is the only flush driver
+- Fixes:
+  - Wrap `axum::serve(...)` in
+    `.with_graceful_shutdown(tokio::signal::ctrl_c())` so the existing
+    `provider.shutdown()` call is actually reached
+  - Call `provider.force_flush()` at the end of `Harness::run_turn`
+    (engine side) and at the end of the chat stream forwarder
+    (`crates/server/src/routes/chat.rs`) for sub-2s visibility on the
+    single-turn case
+
+**Out of scope (ruled out by the investigation)**
+- Tokio runtime mismatch: `BatchSpanProcessor::builder(exporter, Tokio)`
+  runs on the same `#[tokio::main]` multi-thread runtime
+  (`opentelemetry_sdk-0.31.0/src/runtime.rs:74-87`)
+- Queue saturation: chat turns emit ~6-10 spans, well below the 2048
+  queue; saturation drops spans rather than delaying them
+- Wrong region: `LANGFUSE_BASE_URL` default (`cloud.langfuse.com` = EU)
+  returns 4xx, not 13-min lag
+- HTTP transport: langfuse crate is locked to HTTP/protobuf (gRPC
+  not supported by Langfuse); the default `reqwest::Client` adds at
+  most one TLS handshake per export, not 13 minutes
+
+**E2E verification**
+- Add a small helper in `crates/server` that records `t0` when the
+  `chat-turn` span is created and `t1` when the BatchSpanProcessor
+  emits a `StreamEvent::Finish`; log the span-to-flush delay alongside
+  the existing `gen_ai.usage.*` fields
+- Re-run the Phase 11 e2e (`crates/server/tests/agent_tool_e2e.rs`):
+  assert that, with the header + tuned BatchConfig + `force_flush`,
+  a `GET /sessions/{id}/traces` round-trip to the Langfuse API returns
+  the new trace in <5 s
+- Optional: a self-test that toggles `OTEL_EXPORTER_OTLP_HEADERS` and
+  measures both paths so the improvement is documented numerically
+
+[langfuse-v4-faq]: https://langfuse.com/faq/all/explore-observations-in-v4
+
+Checkpoint: a chat trace sent to `/chat` appears in the Langfuse
+dashboard within 5 s end-to-end (down from 13 min); Ctrl-C on the
+server flushes the in-flight batch instead of dropping it; the e2e
+test asserts both behaviours.
