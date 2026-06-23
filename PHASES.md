@@ -20,6 +20,26 @@
 | 16 | Hardening (error toasts, Ctrl-C graceful shutdown, retries, command palette) | ⬜ |
 | 17 | Trace ingestion latency | ⬜ (active) |
 
+## Phase 13 — Skills runtime
+- Skill hot-reload: pick up new or changed `SKILL.md` files without restarting
+- Skill assets: bundle files alongside the body, exposed via `use_skill`
+- Lint `SKILL.md` frontmatter on load, surface errors at boot
+- More bundled sample skills (`explain-error`, `refactor-rust`)
+- Ref: [Anthropic Skills guide][skills-guide]
+
+## Phase 14 — TUI polish
+- Markdown rendering (`tui-markdown`)
+- Code blocks with `syntect`
+- Tool cards, theme switcher, slash command menu, @-mention popover
+- Toast, trace pane, animations
+
+## Phase 15 — Config & persistence
+- `~/.config/mewcode/config.toml`
+- Last-used model, theme, recent sessions
+
+## Phase 16 — Hardening
+- Error toasts, Ctrl-C graceful shutdown, retries, command palette
+
 ## Phase 17 — Trace ingestion latency (active)
 
 Traces take ~13 min to appear in Langfuse. Three confirmed root causes
