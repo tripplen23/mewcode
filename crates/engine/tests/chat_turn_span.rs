@@ -73,18 +73,31 @@ fn chat_turn_span_records_langfuse_io_fields() {
         "trace input should include system prompt and user text"
     );
     assert!(
-        records.contains(
-            "langfuse.observation.input",
-            r#"{"content":"system","role":"system"}"#
-        ),
-        "observation input should include system message"
+        records.contains("langfuse.observation.input", "hello"),
+        "observation input should include the user message"
     );
     assert!(
-        records.contains(
-            "langfuse.observation.input",
-            r#"{"content":"hello","role":"user"}"#
-        ),
-        "observation input should include user message"
+        records.contains("langfuse.observation.input", "system"),
+        "observation input should still include the system prompt"
+    );
+    // Verify user message comes first (for the list-view preview).
+    let observation_input = records
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|(f, _)| f == "langfuse.observation.input")
+        .map(|(_, v)| v.clone())
+        .expect("observation input should be recorded");
+    let hello_pos = observation_input
+        .find("hello")
+        .expect("hello should appear");
+    let system_pos = observation_input
+        .find("system")
+        .expect("system should appear");
+    assert!(
+        hello_pos < system_pos,
+        "user message should come before system prompt in observation input — got: {observation_input}"
     );
     assert!(records.contains("langfuse.trace.output", "pong"));
 }

@@ -22,7 +22,9 @@ pub const FIELD_LANGFUSE_TRACE_INPUT: &str = "langfuse.trace.input";
 /// `langfuse.trace.output` — trace-level output text.
 pub const FIELD_LANGFUSE_TRACE_OUTPUT: &str = "langfuse.trace.output";
 /// `langfuse.observation.input` — generation-observation input
-/// (JSON-encoded `[{\"role\": \"system\", ...}, {\"role\": \"user\", ...}]`).
+/// (JSON-encoded `[{"role": "user", ...}, {"role": "system", ...}]`).
+/// The user message is first so the Langfuse list-view preview shows
+/// the actual question, not the (identical-every-turn) system prompt.
 pub const FIELD_LANGFUSE_OBSERVATION_INPUT: &str = "langfuse.observation.input";
 /// `langfuse.observation.output` — generation-observation output
 /// (JSON-encoded `{\"role\": \"assistant\", \"content\": \"...\"}`).
@@ -54,17 +56,27 @@ pub fn chat_turn_span(model: ModelId, mode: Mode) -> tracing::Span {
 
 /// Record the turn's input on the current span.
 ///
+/// System prompt is unchanged for the model — this only affects trace
+/// presentation in Langfuse. The list-view preview shows the first
+/// ~80 chars of `langfuse.observation.input`, so the user message goes
+/// first; the system prompt still appears as the second element for
+/// the detail view, and as the head of `langfuse.trace.input` for
+/// full-text search.
+///
 /// Exposed as `pub` for the tracing-instrumentation test.
 pub fn record_turn_input(span: &tracing::Span, system_prompt: &str, user_text: &str) {
-    // Langfuse trace input: full prompt context (system + user).
+    // Langfuse trace input: full prompt context (system + user), unchanged.
+    // Used for full-text search in the trace list.
     let trace_input = format!("{system_prompt}\n\n{user_text}");
     span.record(FIELD_LANGFUSE_TRACE_INPUT, &trace_input);
 
-    // Langfuse observation input: JSON message array so the Langfuse UI
-    // can render the system and user messages separately.
+    // Langfuse observation input: user message first, system second.
+    // The list-view row preview renders the first element, so the user
+    // question is what shows; the system prompt is still inspectable
+    // in the detail view.
     let input = serde_json::json!([
-        { "role": GEN_AI_ROLE_SYSTEM, "content": system_prompt },
         { "role": GEN_AI_ROLE_USER, "content": user_text },
+        { "role": GEN_AI_ROLE_SYSTEM, "content": system_prompt },
     ]);
     span.record(FIELD_LANGFUSE_OBSERVATION_INPUT, input.to_string());
 }
