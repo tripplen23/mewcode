@@ -31,7 +31,7 @@
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠃⠻⠿⠃⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 ```
 
-**A terminal coding agent that clones, audits, and ships better apps.**
+**A UML round-tripping, MDA terminal coding agent. **
 
 ## Architecture
 
