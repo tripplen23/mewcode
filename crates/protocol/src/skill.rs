@@ -102,13 +102,22 @@ pub fn read_skill_subfile(
     // Reject an in-root `SKILL.md` — that file is the L1 body and
     // must go through `skill_view` with no `path`. Allowing it as an
     // L2 sub-file would bypass the L1 response budget.
-    if rel == Path::new(SKILL_FILE) {
+    //
+    // Strip `CurDir` (`.`) components first so `./SKILL.md`,
+    // `subdir/./SKILL.md`, and similar dot-prefixed variants all
+    // normalise to `SKILL.md` and get caught by the guard. `..`
+    // is still rejected by the check above.
+    let cleaned: PathBuf = rel
+        .components()
+        .filter(|c| !matches!(c, std::path::Component::CurDir))
+        .collect();
+    if cleaned == Path::new(SKILL_FILE) {
         return Err(SkillError::InvalidSubpath {
             path: relative_path.into(),
             reason: format!("`{SKILL_FILE}` is loaded via L1, not as a sub-file"),
         });
     }
-    let resolved = skill_root.join(rel);
+    let resolved = skill_root.join(&cleaned);
     let canonical = std::fs::canonicalize(&resolved).map_err(|e| SkillError::Read {
         path: resolved.clone(),
         source: e,
@@ -135,37 +144,30 @@ pub fn read_skill_subfile(
 /// catalog can ship them to the model as plain strings.
 fn list_skill_assets(skill_dir: &Path, skill_md: &Path) -> Vec<PathBuf> {
     let mut assets = Vec::new();
-    let Ok(entries) = std::fs::read_dir(skill_dir) else {
-        return assets;
-    };
-    for entry in entries.flatten() {
-        let p = entry.path();
-        if p == skill_md {
-            continue;
-        }
-        // Walk into sub-folders (references/, scripts/, …) so the
-        // catalog can advertise the full tree. Use `skill_dir` as the
-        // strip prefix so paths stay relative to the skill root.
-        if p.is_dir() {
-            collect_files_recursive(skill_dir, &p, &mut assets);
-        } else if p.is_file() {
-            if let Ok(rel) = p.strip_prefix(skill_dir) {
-                assets.push(rel.to_path_buf());
-            }
-        }
-    }
+    // Walk into sub-folders (references/, scripts/, …) so the catalog
+    // can advertise the full tree. The `skip` is only applied at the
+    // top level — nested `SKILL.md` files (if any) are still listed.
+    collect_files(skill_dir, skill_dir, Some(skill_md), &mut assets);
     assets.sort();
     assets
 }
 
-fn collect_files_recursive(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) {
+fn collect_files(
+    root: &Path,
+    dir: &Path,
+    skip: Option<&Path>,
+    out: &mut Vec<PathBuf>,
+) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
         let p = entry.path();
+        if skip == Some(p.as_path()) {
+            continue;
+        }
         if p.is_dir() {
-            collect_files_recursive(root, &p, out);
+            collect_files(root, &p, None, out);
         } else if p.is_file() {
             if let Ok(rel) = p.strip_prefix(root) {
                 out.push(rel.to_path_buf());
@@ -255,9 +257,6 @@ pub fn parse_skill_md(raw: &str, path: &Path) -> Result<Skill, SkillError> {
 struct Frontmatter {
     name: Option<String>,
     description: Option<String>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    version: Option<String>,
 }
 
 /// Split a `SKILL.md` document into frontmatter and body. Returns

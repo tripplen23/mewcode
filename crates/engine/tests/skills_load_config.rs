@@ -230,6 +230,41 @@ fn view_subfile_rejects_skill_md() {
 }
 
 #[test]
+fn view_subfile_rejects_dot_prefixed_skill_md() {
+    // `./SKILL.md` and `.//SKILL.md` must be rejected like
+    // `SKILL.md` — stripping the leading `.` would let the
+    // request reach the L2 read and bypass the L1 response
+    // budget.
+    let project = fresh_dir("dot-skillmd");
+    let project_skills = project.join(PROJECT_SKILLS_DIR);
+    std::fs::create_dir_all(&project_skills).unwrap();
+    write_skill(&project_skills, "alpha", "alpha skill");
+
+    let cfg = SkillLoadConfig {
+        bundled_dir: None,
+        external_dirs: vec![],
+        project_search_start: Some(project),
+        include_dev_dir: false,
+    };
+    let reg = SkillRegistry::load(&cfg);
+
+    for variant in ["./SKILL.md", ".//SKILL.md"] {
+        let err = reg
+            .view_subfile("alpha", variant)
+            .expect_err("dot-prefixed SKILL.md must be rejected as sub-file");
+        match err {
+            SkillError::InvalidSubpath { reason, .. } => {
+                assert!(
+                    reason.contains("L1"),
+                    "reason should mention L1 for {variant}; got {reason}"
+                );
+            }
+            other => panic!("expected InvalidSubpath for {variant}, got {other:?}"),
+        }
+    }
+}
+
+#[test]
 fn list_for_tool_returns_sorted_entries() {
     let project = fresh_dir("list");
     let project_skills = project.join(PROJECT_SKILLS_DIR);
