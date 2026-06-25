@@ -93,7 +93,8 @@ why in a `// ponytail:` comment naming the ceiling.
 - **Acceptance:** unit tests: (a) loading a non-existent project yields an empty
   graph; (b) a 3-node/2-edge graph round-trips through save→load; (c)
   `auto_layout` assigns a distinct position to every node and is deterministic
-  for a fixed input. `cargo test -p mewcode-engine` green.
+  for a fixed input (deterministic order = sort by `NodeId` before placement;
+  ties broken by edge `(src, tgt)` lex order). `cargo test -p mewcode-engine` green.
 
 ### T3 — Mouse capture in the client event loop
 

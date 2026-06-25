@@ -68,7 +68,7 @@ glow is an enhancement that simply turns off on a 16-color terminal.
 A draw.io-style three-pane shell with a Warp-style prompt/block strip docked at
 the bottom. Panes are toggleable for narrow terminals.
 
-```
+```text
 ┌ mew · architecture canvas ───────────────────────────── ⌘P palette ─ ◑ theme ┐
 │ PALETTE  │  · · · · · · · · · · · · · · · · · · · · · ·  │ INSPECTOR          │
 │          │  · · · ╭───────────╮ · · · · · · · · · · · ·  │ Authenticator      │
@@ -101,7 +101,7 @@ A `Theme` struct with semantic slots, loaded from a TOML theme file (ties into
 Phase 15 config). Reuse or vendor [`ratatui-themes`](https://github.com/ricardodantas/ratatui-themes)
 for ready palettes, or define our own slots:
 
-```
+```text
 bg, surface, grid_dot, fg, fg_dim,
 accent, accent_alt,
 node_system, node_container, node_component,   // C4 color coding

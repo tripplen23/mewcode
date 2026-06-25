@@ -23,7 +23,7 @@ absorb or supersede the remaining TUI/config work.
 | 13 | Skills runtime (2-tool progressive disclosure + external dirs) | ✅ |
 | 14 | TUI polish (markdown, code blocks, tool cards, theme, slash menu, @-mention) | 📦 absorbed into M1 |
 | 15 | Config & persistence (`~/.config/mewcode/config.toml`, recent sessions) | 📦 partially absorbed (M1 needs theme loading) |
-| 16 | Hardening (error toasts, Ctrl-C graceful shutdown, retries, command palette) | 📦 partially absorbed (M1 needs toast + ctrl-c) |
+| 16 | Hardening (error toasts, Ctrl-C graceful shutdown, retries, command palette) | 📦 partially absorbed (M1 needs toast + Ctrl-C *and* panic-recovery) |
 | 17 | Trace ingestion latency | ⬜ (active) |
 
 ## Mewdraw milestones
@@ -73,7 +73,7 @@ Subsumed by mewdraw milestones. Component breakdown:
 - Code blocks with `syntect` → re-scoped to M2.
 - Tool cards → re-scoped to M2.
 - Theme switcher → re-scoped to M2 (M1 ships one default theme per `ui-aesthetic.md` §6).
-- Slash command menu → out of scope (M2+.
+- Slash command menu → out of scope (M2+).
 - @-mention popover → out of scope (M2+).
 - Toast, trace pane, animations → partially in M1 (toast), partially in M2 (trace pane, animations).
 
@@ -85,7 +85,8 @@ Subsumed by mewdraw milestones. Component breakdown:
 ## Phase 16 — Hardening (partial)
 
 - Error toasts → partially in M1 (toast from `canvas_mutate` failures), fully in M2.
-- Ctrl-C graceful shutdown → in M1's T3 acceptance (verify `TerminalGuard::Drop` covers panic).
+- Ctrl-C graceful shutdown → in M1's T3 acceptance (signal handler drains in-flight requests, then exits).
+- Panic recovery (terminal restore) → in M1's T3 acceptance (verify `TerminalGuard::Drop` covers panic from mouse-event handlers).
 - Retries → out of scope (M2+).
 - Command palette → out of scope (M2+, per `ui-aesthetic.md` §6).
 
@@ -121,17 +122,21 @@ returns from a Langfuse API query in <5s.
 
 ## Open strategic questions (tracked in #14)
 
-Four strategic questions came up during the PR #12 review. They block
-later milestones, not M1:
+Four strategic questions came up during the PR #12 review. Their
+milestone impact:
 
 - **Q1 (first-run UX):** when a user has code but no `graph.json`,
-  where does the graph come from? Affects M5.
+  where does the graph come from? Affects M1 (T1 renders an empty
+  graph; first-run needs either an init command or a "code → graph"
+  bootstrap before the M1 UX feels useful) and M5.
 - **Q2 (drift policy):** when M4 finds divergence between contract
   and code, what happens? Affects M3+M4.
 - **Q3 (layout-crate spike):** `ascii-dag` vs `layout-rs` needs a
-  real evaluation PR before T2. Affects T2.
+  real evaluation PR before T2. Blocks M1 (T2 depends on the
+  choice).
 - **Q4 (Plan mode asymmetry):** `canvas_mutate` is allowed in Plan
-  mode; `edit_file` isn't. Document the policy. Affects T6.
+  mode; `edit_file` isn't. Document the policy. Blocks M1 (T6 must
+  enforce this).
 
 ## Key entry points
 
