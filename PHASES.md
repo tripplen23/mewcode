@@ -24,7 +24,7 @@ absorb or supersede the remaining TUI/config work.
 | 14 | TUI polish (markdown, code blocks, tool cards, theme, slash menu, @-mention) | 📦 absorbed into M1 |
 | 15 | Config & persistence (`~/.config/mewcode/config.toml`, recent sessions) | 📦 partially absorbed (M1 needs theme loading) |
 | 16 | Hardening (error toasts, Ctrl-C graceful shutdown, retries, command palette) | 📦 partially absorbed (M1 needs toast + Ctrl-C *and* panic-recovery) |
-| 17 | Trace ingestion latency | ⬜ (active) |
+| 17 | Trace ingestion latency | ✅ |
 
 ## Mewdraw milestones
 
@@ -92,31 +92,42 @@ Subsumed by mewdraw milestones. Component breakdown:
 
 ## Phase 17 — Trace ingestion latency
 
-Traces take ~13 min to appear in Langfuse. Three confirmed root causes
+**Status:** fixed by setting `x-langfuse-ingestion-version: 4` on the OTEL
+exporter. See PR that adds the header in `crates/server/src/main.rs:96-100`
+and `crates/server/tests/agent_tool_e2e.rs:63-67`; tightens the e2e
+timing loop to assert trace appears in <5s (was implicit 8s budget).
+
+Traces used to take ~13 min to appear in Langfuse. Three confirmed root causes
 (verified against `opentelemetry_sdk-0.31.0` / `opentelemetry-langfuse-0.6.1`
 source, plus [Langfuse v4 FAQ][langfuse-v4]):
 
 1. **Missing `x-langfuse-ingestion-version: 4` header.** Langfuse's
    Fast Preview path needs this; without it traces land in the S3
    batched path which the FAQ itself documents as "multi-minute
-   delays". The langfuse crate's `exporter.rs:185-199` only injects
-   `Authorization`, not this header.
+   delays". The langfuse crate's `exporter.rs` only injects
+   `Authorization`, not this header. **Fixed:** `.with_header("x-langfuse-ingestion-version", "4")`
+   on the `ExporterBuilder` chain.
 2. **Unconfigured `BatchConfig` defaults.** `main.rs:116` uses
    defaults (5s tick, 30s export timeout, batch 512, queue 2048).
+   *Not fixed in this PR* — the v4 header is the load-bearing change;
+   `BatchConfig` tuning is a small additional win, can come in a
+   follow-up.
 3. **No graceful shutdown + no per-turn `force_flush`.** Ctrl-C drops
    in-flight spans; the 5s ticker is the only flush driver.
+   *Not fixed in this PR* — separate concern from the 13-min latency;
+   the existing `provider.shutdown()` at the end of `main` is
+   sufficient for the e2e test.
 
-Fix shape:
-- Set the v4 header via `OTEL_EXPORTER_OTLP_HEADERS` (langfuse builder
-  doesn't expose header injection).
-- Tune `BatchConfigBuilder`: `scheduled_delay=2s`, `export_timeout=10s`,
-  `batch=256`, `queue=4096`.
+Other items deferred (not in scope for this PR):
 - Wrap `axum::serve` in `with_graceful_shutdown(tokio::signal::ctrl_c())`
-  so `provider.shutdown()` is actually reached.
+  so `provider.shutdown()` is actually reached on Ctrl-C.
 - `force_flush()` at end of `Harness::run_turn` and the chat forwarder.
+- `BatchConfigBuilder` tuning: `scheduled_delay=2s`, `export_timeout=10s`,
+  `batch=256`, `queue=4096`.
 
-E2E: extend `crates/server/tests/agent_tool_e2e.rs` to assert trace
-returns from a Langfuse API query in <5s.
+E2E: `crates/server/tests/agent_tool_e2e.rs` now asserts the trace
+appears in <5s (4 × 1.5s polls, fail-fast on timeout). Header set via
+`ExporterBuilder::with_header` in the e2e test's `init_langfuse_tracing`.
 
 [langfuse-v4]: https://langfuse.com/faq/all/explore-observations-in-v4
 
@@ -150,7 +161,7 @@ milestone impact:
 | Tool adapter (rig ↔ mewcode) | `crates/engine/src/tools/adapter.rs` |
 | Tool registry / mode gate | `crates/engine/src/tools/mod.rs` |
 | Memory store | `crates/engine/src/memory.rs` |
-| OTel/Langfuse init | `crates/server/src/main.rs:73-120` |
+| OTel/Langfuse init | `crates/server/src/main.rs::build_langfuse_provider` |
 | `/chat` SSE | `crates/server/src/routes/chat.rs` |
-| E2E (real LLM + Langfuse) | `crates/server/tests/agent_tool_e2e.rs` |
+| E2E (real LLM + Langfuse) | `crates/server/tests/agent_tool_e2e.rs::init_langfuse_tracing` |
 | Canvas design | `docs/architecture-canvas/` |

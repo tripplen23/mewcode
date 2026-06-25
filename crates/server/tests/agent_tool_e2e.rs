@@ -64,6 +64,11 @@ fn init_langfuse_tracing() -> Option<SdkTracerProvider> {
         .with_host(&host)
         .with_basic_auth(&public_key, &secret_key)
         .with_timeout(Duration::from_secs(10))
+        // Route traces to Langfuse's Fast Preview (v4) ingestion path.
+        // Without this header, traces land in the legacy S3-batched path
+        // which can delay visibility by 10+ minutes.
+        // See: https://langfuse.com/faq/all/explore-observations-in-v4
+        .with_header("x-langfuse-ingestion-version", "4")
         .build()
         .ok()?;
 
@@ -300,11 +305,18 @@ async fn agent_reads_readme_via_tool_call() {
     eprintln!("Tracer provider shut down, waiting for Langfuse to index...");
 
     // Retry loop: Langfuse batch export + indexing can take several seconds.
+    // With the v4 ingestion header (see `init_langfuse_tracing`) traces should
+    // appear in real-time; the 5s budget is the verification target from
+    // PHASES.md §"Phase 17 — Trace ingestion latency".
     let traces = {
+        let started = std::time::Instant::now();
         let mut last_result = None;
         for attempt in 1..=4 {
-            tokio::time::sleep(Duration::from_secs(2)).await;
-            eprintln!("Querying Langfuse traces (attempt {attempt}/4)...");
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            eprintln!(
+                "Querying Langfuse traces (attempt {attempt}/4, {}s elapsed)...",
+                started.elapsed().as_secs_f32()
+            );
             let result = langfuse_traces(&session_id.to_string()).await;
             let count = result
                 .get("data")
@@ -318,6 +330,14 @@ async fn agent_reads_readme_via_tool_call() {
             }
             last_result = Some(result);
         }
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "traces did not appear in Langfuse within 5s (took {}s); \
+             check that LANGFUSE_PUBLIC_KEY/SECRET_KEY are correct and the \
+             x-langfuse-ingestion-version=4 header is set on the exporter",
+            elapsed.as_secs_f32()
+        );
         last_result.expect("should have at least one Langfuse API response")
     };
     let trace_data = traces

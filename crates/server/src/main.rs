@@ -97,6 +97,11 @@ fn build_langfuse_provider() -> Option<SdkTracerProvider> {
         .with_host(&host)
         .with_basic_auth(&public_key, &secret_key)
         .with_timeout(Duration::from_secs(10))
+        // Route traces to Langfuse's Fast Preview (v4) ingestion path.
+        // Without this header, traces land in the legacy S3-batched path
+        // which can delay visibility by 10+ minutes.
+        // See: https://langfuse.com/faq/all/explore-observations-in-v4
+        .with_header("x-langfuse-ingestion-version", "4")
         .build()
     {
         Ok(exporter) => exporter,

@@ -23,6 +23,11 @@ Read these first, every session:
 - {{PROJECT_ROOT}}/docs/architecture-canvas/milestone-1-promptable-canvas.md  (tasks T1..T7, acceptance, checklist)
 - {{PROJECT_ROOT}}/docs/architecture-canvas/ui-aesthetic.md     (visual target: draw.io × Warp, theme, blocks, ceilings)
 - {{PROJECT_ROOT}}/PHASES.md and {{PROJECT_ROOT}}/AGENTS.md     (project conventions)
+- The `langfuse` skill (load with `skill_view(name="langfuse")` before STEP 2's E2E
+  verification). Trace latency is gated by PHASES §"Phase 17 — Trace ingestion
+  latency"; the e2e test in `crates/server/tests/agent_tool_e2e.rs` asserts
+  traces appear in <5s via the Langfuse API. The skill's
+  `references/instrumentation.md` and `references/cli.md` are directly relevant.
 Do not invent scope. The milestone doc's tasks T1..T7 and its §6 checklist are
 the definition of done. If a task is ambiguous, re-read the README data model
 before guessing.
