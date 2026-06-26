@@ -100,3 +100,35 @@ fn wraps_to_next_row_after_cols_per_row() {
         Some(&Point { x: 0, y: 0 })
     );
 }
+
+/// Regression: `existing` may carry positions for `NodeId`s that are
+/// no longer in `graph.nodes` (e.g. a node was deleted but its old
+/// position is still in `layout.json`). `auto_layout` must drop those
+/// stale entries so the returned map covers only the current graph's
+/// node set — otherwise a save/render downstream would persist or
+/// render a position for a deleted node.
+#[test]
+fn drops_existing_entries_for_removed_nodes() {
+    let g = Graph {
+        version: 1,
+        nodes: vec![node("a", "A"), node("b", "B")],
+        edges: vec![],
+    };
+    let pinned: ResolvedLayout = HashMap::from([
+        (NodeId("a".to_string()), Point { x: 5, y: 5 }),
+        (NodeId("b".to_string()), Point { x: 9, y: 9 }),
+        // "c" was in the graph previously but has since been deleted.
+        (NodeId("c".to_string()), Point { x: 100, y: 100 }),
+    ]);
+    let resolved = auto_layout(&g, &pinned);
+    assert_eq!(resolved.len(), 2, "stale entry for 'c' should be dropped");
+    assert!(!resolved.contains_key(&NodeId("c".to_string())));
+    assert_eq!(
+        resolved.get(&NodeId("a".to_string())),
+        Some(&Point { x: 5, y: 5 })
+    );
+    assert_eq!(
+        resolved.get(&NodeId("b".to_string())),
+        Some(&Point { x: 9, y: 9 })
+    );
+}

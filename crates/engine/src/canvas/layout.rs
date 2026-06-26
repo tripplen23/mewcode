@@ -36,21 +36,17 @@ pub fn auto_layout(graph: &Graph, existing: &ResolvedLayout) -> ResolvedLayout {
     let mut sorted_ids: Vec<&NodeId> = graph.nodes.iter().map(|n| &n.id).collect();
     sorted_ids.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let mut resolved: ResolvedLayout = existing.clone();
+    // Build `resolved` from the current graph's node set only. Entries
+    // in `existing` whose NodeId is no longer in `graph.nodes` are
+    // dropped here, so save/render paths downstream never see a
+    // position for a node that has been deleted from the graph.
+    let mut resolved: ResolvedLayout = HashMap::with_capacity(sorted_ids.len());
     for (i, id) in sorted_ids.into_iter().enumerate() {
-        // Skip nodes that the user (or a previous layout pass) pinned.
-        if resolved.contains_key(id) {
-            continue;
-        }
-        let col = (i % COLS_PER_ROW) as i32;
-        let row = (i / COLS_PER_ROW) as i32;
-        resolved.insert(
-            id.clone(),
-            Point {
-                x: col * COL_STEP,
-                y: row * ROW_STEP,
-            },
-        );
+        let point = existing.get(id).copied().unwrap_or(Point {
+            x: (i % COLS_PER_ROW) as i32 * COL_STEP,
+            y: (i / COLS_PER_ROW) as i32 * ROW_STEP,
+        });
+        resolved.insert(id.clone(), point);
     }
     resolved
 }
