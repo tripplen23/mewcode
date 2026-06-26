@@ -234,6 +234,24 @@ fn dispatch(cmd: Cmd, api: &ApiClient, tx: &mpsc::Sender<Msg>) {
             let tx = tx.clone();
             tokio::spawn(run_chat_stream(api, req, tx));
         }
+        Cmd::LoadCanvas => {
+            // Fetch graph + layout in parallel. The result is
+            // flattened into a single `CanvasData` so the
+            // Canvas screen doesn't have to do partial-failure
+            // reconciliation when one HTTP call succeeded and
+            // the other failed.
+            let api = api.clone();
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                let graph_fut = api.get_graph();
+                let layout_fut = api.get_layout();
+                let result = match tokio::try_join!(graph_fut, layout_fut) {
+                    Ok((graph, layout)) => Ok(crate::runtime::model::CanvasData { graph, layout }),
+                    Err(e) => Err(e.to_string()),
+                };
+                let _ = tx.send(Msg::CanvasLoaded(result)).await;
+            });
+        }
     }
 }
 

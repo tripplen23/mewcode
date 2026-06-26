@@ -76,7 +76,6 @@ pub struct ServerConfig {
     #[serde(default)]
     pub skills: SkillServerConfig,
 }
-
 /// Skills subsection of [`ServerConfig`].
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct SkillServerConfig {
@@ -128,6 +127,17 @@ impl SkillServerConfig {
             .iter()
             .map(|s| std::path::PathBuf::from(expand_path(s)))
             .collect()
+    }
+}
+
+impl ServerConfig {
+    /// Project root for canvas file I/O. Defaults to the server's
+    /// current working directory so the canvas lives wherever the
+    /// user launched the server. The resolution is exposed as a
+    /// method (not a field) so future overrides (CLI flag, env var,
+    /// config file) can layer on without changing call sites.
+    pub fn canvas_project_root(&self) -> std::path::PathBuf {
+        std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
     }
 }
 
