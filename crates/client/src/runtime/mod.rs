@@ -39,7 +39,7 @@ use std::io::{self, Stdout};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use crossterm::event::{self, Event, KeyEventKind};
+use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -74,17 +74,17 @@ impl TerminalGuard {
     fn new() -> Result<Self> {
         enable_raw_mode().context("enabling raw mode")?;
         let mut stdout = io::stdout();
-        if let Err(e) = execute!(stdout, EnterAlternateScreen) {
+        if let Err(e) = execute!(stdout, EnterAlternateScreen, EnableMouseCapture) {
             let _ = disable_raw_mode();
-            return Err(e).context("entering alternate screen");
+            return Err(e).context("entering alternate screen + mouse capture");
         }
         let terminal = match Terminal::new(CrosstermBackend::new(stdout)) {
             Ok(t) => t,
             Err(e) => {
-                // Clean up before propagating: raw mode and alternate screen
-                // are both active at this point.
+                // Clean up before propagating: raw mode, alternate screen,
+                // and mouse capture are all active at this point.
                 let _ = disable_raw_mode();
-                let _ = execute!(io::stdout(), LeaveAlternateScreen);
+                let _ = execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
                 return Err(e).context("initialising terminal");
             }
         };
@@ -96,8 +96,8 @@ impl Drop for TerminalGuard {
     /// Best-effort restore: nothing here may panic or early-return, since we
     /// might already be unwinding. Errors are intentionally swallowed.
     fn drop(&mut self) {
+        let _ = execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen);
         let _ = self.terminal.show_cursor();
     }
 }
@@ -143,7 +143,8 @@ pub async fn run(config: ClientConfig) -> Result<()> {
 
 /// Spawn the blocking input reader: it polls crossterm for events and forwards
 /// each key press as a [`Msg::Key`]. Key *release* events are dropped so an
-/// action never fires twice on platforms that report both.
+/// action never fires twice on platforms that report both. Mouse events are
+/// forwarded as [`Msg::Mouse`]; resize / focus / paste are still ignored.
 fn spawn_input_reader(tx: mpsc::Sender<Msg>) {
     tokio::task::spawn_blocking(move || {
         loop {
@@ -154,7 +155,12 @@ fn spawn_input_reader(tx: mpsc::Sender<Msg>) {
                             break; // loop gone
                         }
                     }
-                    Ok(_) => {} // resize, mouse, focus, paste, key-release: ignored
+                    Ok(Event::Mouse(mouse)) => {
+                        if tx.blocking_send(Msg::Mouse(mouse)).is_err() {
+                            break; // loop gone
+                        }
+                    }
+                    Ok(_) => {} // resize, focus, paste, key-release: ignored
                     Err(_) => break,
                 },
                 // Timed out with no event: stop if the loop has shut down.
