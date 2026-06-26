@@ -44,6 +44,9 @@ pub fn update(app: &mut App, msg: Msg) -> Cmd {
             Screen::Session(_) => on_session_key(screen, toast, key),
         },
 
+        // Mouse events arrive at the event loop.
+        Msg::Mouse(_) => Cmd::None,
+
         Msg::Tick => Cmd::None,
 
         Msg::SessionsLoaded(result) => {
