@@ -152,12 +152,12 @@ fn spawn_input_reader(tx: mpsc::Sender<Msg>) {
                 Ok(true) => match event::read() {
                     Ok(Event::Key(key)) if key.kind != KeyEventKind::Release => {
                         if tx.blocking_send(Msg::Key(key)).is_err() {
-                            break; // loop gone
+                            break;
                         }
                     }
                     Ok(Event::Mouse(mouse)) => {
                         if tx.blocking_send(Msg::Mouse(mouse)).is_err() {
-                            break; // loop gone
+                            break;
                         }
                     }
                     Ok(_) => {} // resize, focus, paste, key-release: ignored
@@ -183,7 +183,7 @@ fn spawn_ticker(tx: mpsc::Sender<Msg>) {
         loop {
             interval.tick().await;
             if tx.send(Msg::Tick).await.is_err() {
-                break; // loop gone
+                break;
             }
         }
     });
@@ -312,7 +312,7 @@ async fn run_chat_stream(api: ApiClient, req: ChatRequest, tx: mpsc::Sender<Msg>
             }
         };
         if tx.send(Msg::Stream(msg)).await.is_err() {
-            break; // loop gone
+            break;
         }
     }
 }
