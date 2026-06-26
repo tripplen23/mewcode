@@ -97,6 +97,7 @@ fn build_langfuse_provider() -> Option<SdkTracerProvider> {
         .with_host(&host)
         .with_basic_auth(&public_key, &secret_key)
         .with_timeout(Duration::from_secs(10))
+        .with_header("x-langfuse-ingestion-version", "4")
         .build()
     {
         Ok(exporter) => exporter,
