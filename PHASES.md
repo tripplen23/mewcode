@@ -133,45 +133,6 @@ Other items deferred (not in scope for this PR):
 - `force_flush()` at end of `Harness::run_turn` and the chat forwarder.
   Tracked in #19.
 
-## Measured end-to-end latency
-
-Pulled from `cloud.langfuse.com` via the public API on 2026-06-26
-(samples from the most recent traces, span-timestamp to
-Langfuse-`createdAt` delta):
-
-| Trace ID | Span timestamp | Langfuse indexed | End-to-end | Source |
-|----------|----------------|-------------------|------------|--------|
-| `c3efbdad…` | 2026-06-24 20:36:55Z | 20:37:00Z | **4.7s** | Pre-PR-20 binary (June 24 build, v4 header only) |
-| `8fab2863…` | 2026-06-24 19:46:18Z | 19:46:25Z | **6.3s** | Pre-PR-20 binary |
-| `adeee6df…` | 2026-06-24 19:43:37Z | 19:43:43Z | **5.5s** | Pre-PR-20 binary |
-| `63d0ba29…` | 2026-06-26 08:35:36Z | 08:36:56Z | **79.1s** | Post-PR-20 binary (BatchConfig tuned) |
-| `819c3be3…` | 2026-06-26 09:03:26Z | 09:11:14Z | **467.3s** | Post-PR-20 binary ("moi, mita kuuluu" test message) |
-
-Two things this table actually shows:
-
-- **The BatchConfig change is correct.** The SDK-side flush window
-  is bounded by `scheduled_delay=2s + max_export_timeout=10s ≈ 12s`
-  in worst case, vs the previous `5s + 30s ≈ 35s`. The June 24
-  samples (4.7-6.3s end-to-end) are consistent with the SDK working
-  as designed plus Langfuse's own indexing overhead at the time.
-- **End-to-end is dominated by Langfuse's indexing, not our SDK.**
-  The June 26 samples (79s, 467s) show that with the same code
-  changes plus a fresh server restart, end-to-end can be 1-8
-  minutes. The trace is reaching Langfuse — it just isn't being
-  indexed promptly. This is a Langfuse Fast Preview side effect,
-  not something we can fix in mewcode. Tracked in #21.
-
-## E2E test claim
-
-`crates/server/tests/agent_tool_e2e.rs` asserts the trace appears in
-<5s (4 × 1.5s polls, fail-fast on timeout). This test passes against
-the live Langfuse API as of the v4-header PR. The assertion is
-strictly an SDK-side measurement — the test calls
-`provider.shutdown()` to force-flush all spans, then polls the
-Langfuse API. The 5s budget is for the forced-flush path, not the
-natural-batch-tick path. The natural-batch path has a 2s SDK floor
-plus whatever Langfuse's indexing adds on top (see table above).
-
 [langfuse-v4]: https://langfuse.com/faq/all/explore-observations-in-v4
 [langfuse-status]: https://status.langfuse.com/
 
