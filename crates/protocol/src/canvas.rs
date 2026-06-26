@@ -4,8 +4,7 @@
 //! [`Graph`] carries the semantic structure (nodes + edges with their
 //! `bind` and `contract` fields) and is the only thing the agent reads,
 //! writes, and diffs. [`Layout`] is a pure presentation overlay — node
-//! positions and theme — that drift detection ignores entirely. See
-//! `docs/architecture-canvas/README.md` §5 for the full design.
+//! positions and theme — that drift detection ignores entirely.
 
 use std::collections::HashMap;
 
@@ -65,9 +64,8 @@ pub enum NodeKind {
     Component,
 }
 
-/// Edge relationships. Kept narrow on purpose — see README §3 decision 2
-/// (structure-only sync). Anything semantic or behavioural does not belong
-/// here.
+/// Edge relationships. Kept narrow on purpose (structure-only sync):
+/// anything semantic or behavioural does not belong here.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
 )]
@@ -92,7 +90,7 @@ pub struct Node {
     pub id: NodeId,
     /// C4 node kind.
     pub kind: NodeKind,
-    /// Human-facing display name. May be renamed freely.
+    /// Human-facing display name.
     pub name: String,
     /// `path#symbol` binding to a real source symbol. Optional until code
     /// is generated or a human binds the node manually.
@@ -104,7 +102,7 @@ pub struct Node {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub contract: Vec<String>,
     /// Optional hint for forward codegen (e.g. `"rust"`, `"python"`).
-    /// Ignored by M1 tools.
+    /// Ignored by the current tool set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tech: Option<String>,
     /// Free-text description for humans and the agent.
@@ -124,14 +122,11 @@ pub struct Edge {
 }
 
 /// The semantic architecture graph. The single source of truth — what the
-/// agent reads, writes, and diffs. This file (and only this file) drives
-/// drift detection.
+///  agent reads, writes, and diffs. This file drives drift detection.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 pub struct Graph {
     /// Schema version. Required — a missing `version` is a corrupt file
-    /// and fails loud rather than silently defaulting to v0. T2's loader
-    /// returns `Graph::default()` only when the *file is absent*, a
-    /// different code path from a corrupt file.
+    /// and fails loud rather than silently defaulting to v0.
     pub version: u32,
     /// Nodes keyed implicitly by their stable `id`. Order is not
     /// significant; serde preserves insertion order on serialize.
@@ -140,9 +135,9 @@ pub struct Graph {
     /// corrupt.
     #[serde(default)]
     pub nodes: Vec<Node>,
-    /// Edges. Dangling edges (referencing missing nodes) are rejected by
-    /// `canvas_mutate` (see milestone-1 T6), not by this struct. Empty
-    /// for the same reason as `nodes` above.
+    /// Edges. Dangling edges (referencing missing nodes) are rejected
+    /// by the engine's mutation layer, not by this struct. Empty for
+    /// the same reason as `nodes` above.
     #[serde(default)]
     pub edges: Vec<Edge>,
 }
@@ -157,9 +152,8 @@ impl Default for Graph {
     }
 }
 
-/// A 2D point in layout coordinates. Units are abstract (character cells
-/// in the TUI render); the layout engine is the only thing that needs to
-/// care.
+/// A 2D point in layout coordinates. Units are abstract (character cells in
+/// the TUI render); the layout engine is the only thing that needs to care.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, utoipa::ToSchema,
 )]
@@ -169,9 +163,9 @@ pub struct Point {
 }
 
 /// Theme names the protocol layer understands. The protocol carries the
-/// name; the client resolves it to a `Theme` struct (see
-/// `ui-aesthetic.md` §4). Keeping this an enum (not a `String`) catches
-/// typos at the data-model boundary rather than at theme-load time.
+/// name; the client resolves it to a concrete theme. Keeping this an
+/// enum (not a `String`) catches typos at the data-model boundary
+/// rather than at theme-load time.
 #[derive(
     Debug,
     Clone,
@@ -186,8 +180,7 @@ pub struct Point {
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum ThemeName {
-    /// The single default theme shipped in M1. M2 will add more variants
-    /// here as the theming surface lands.
+    /// The single default theme shipped today.
     #[default]
     Default,
 }
@@ -204,8 +197,7 @@ pub struct Layout {
     /// `positions` field is empty, not corrupt.
     ///
     /// Validity (i.e. each key exists in the [`Graph`]) is enforced at
-    /// the engine layer (T2's loader), not here. Drift detection (M4)
-    /// ignores this field entirely.
+    /// the engine layer, not here. Drift detection ignores this field  entirely.
     #[serde(default)]
     pub positions: HashMap<NodeId, Point>,
     /// Theme name. Resolved to a `Theme` struct on the client side.

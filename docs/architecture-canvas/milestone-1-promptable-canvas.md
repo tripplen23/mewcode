@@ -83,12 +83,14 @@ New module `crates/engine/src/canvas/` with:
 - `auto_layout(&Graph, &Layout) -> ResolvedLayout` that fills positions for
   nodes missing from `layout.json`, using a layout crate.
 
-**Layout crate spike (do this first, timeboxed):** try
-[`ascii-dag`](https://lib.rs/crates/ascii-dag) for grid placement + edge
-routing. If edge routing in a char grid is unusable, fall back to
-[`layout-rs`](https://lib.rs/crates/layout-rs) or
-[`rust-sugiyama`](https://lib.rs/crates/rust-sugiyama). Record the choice and
-why in a `// ponytail:` comment naming the ceiling.
+**Layout spike result (Q3, done):** see
+`crates/engine/src/canvas/layout.rs` for the full evaluation. Short
+version: `ascii-dag` is an ASCII renderer, not a layout engine;
+`layout-rs` is a `.dot` parser that shells out to Graphviz;
+`rust-sugiyama` 0.4.0 panics on the 3-node chain test case in two
+separate places. The spike ships an **in-house row-major grid
+layout** for M1 and notes `dagre` (0.1.1) as the future option when
+M2+ brings bigger graphs.
 
 - **Acceptance:** unit tests: (a) loading a non-existent project yields an empty
   graph; (b) a 3-node/2-edge graph round-trips through save→load; (c)
