@@ -32,6 +32,10 @@ dirs = { workspace = true }
 globset = { workspace = true }
 ignore = { workspace = true }
 regex = { workspace = true }
+# Q3 spike: no third-party layout crate — see the `ponytail:` comment in
+# `crates/engine/src/canvas/layout.rs` for why rust-sugiyama, dagre,
+# ascii-dag, and layout-rs are all unfit for T2. We ship an in-house
+# grid layout for M1 and revisit when M2+ brings bigger graphs.
 
 [dev-dependencies]
 tokio = { workspace = true }

@@ -69,18 +69,14 @@ Non-goals for v1, stated explicitly:
 
 Research notes with what we take from each. Full sources at the bottom.
 
-**Graph layout — do NOT write a layout algorithm.** It's a solved, hard problem
-and there are Rust crates:
-
-- [`ascii-dag`](https://lib.rs/crates/ascii-dag) — places nodes and routes
-  edges in a **fixed-width grid**. Terminal-native; the closest match to what
-  we render. *Primary candidate.*
-- [`layout-rs`](https://lib.rs/crates/layout-rs) — Graphviz-style layout, mature.
-- [`rust-sugiyama`](https://lib.rs/crates/rust-sugiyama) /
-  [`dagre`](https://lib.rs/crates/dagre) — layered (Sugiyama) layout over
-  `petgraph`, good for dependency DAGs.
-- Decision deferred to milestone 1 spike: evaluate `ascii-dag` first; fall back
-  to `layout-rs` if edge routing in a character grid is weak.
+**Graph layout — see `crates/engine/src/canvas/layout.rs` for the
+Q3 spike result.** The README's earlier ranking (`ascii-dag` →
+`layout-rs` → `rust-sugiyama`) was a category error: `ascii-dag`
+and `layout-rs` are not layout engines, and `rust-sugiyama` 0.4.0
+panics on the 3-node chain test case. The spike ships an **in-house
+row-major grid layout** for M1 (3-10 node graphs, no edges-crossing
+concern) and notes `dagre` (0.1.1) as a future option for M2+ when
+graph sizes make a real Sugiyama algorithm matter.
 
 **Terminal mouse + canvas — proven, not built-in to ratatui:**
 
