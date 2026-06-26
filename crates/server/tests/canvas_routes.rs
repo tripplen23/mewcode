@@ -1,11 +1,11 @@
 //! Canvas route round-trip: `GET /canvas/{graph,layout}` returns
 //! the project's `.mewcode/canvas/{graph,layout}.json` as JSON.
 //!
-//! The route resolves `project_root` from the server's CWD, so
-//! the test mutates CWD for the duration. Runs with
-//! `--test-threads=1` per crate convention; see memory entry on
-//! `phase12_tools.rs` parallel flakes. The test restores CWD on
-//! drop via RAII.
+//! The route resolves `project_root` from `ServerConfig`. Tests
+//! inject the project root via `with_canvas_project_root` so they
+//! can run in parallel without racing on process CWD (the previous
+//! version mutated `std::env::current_dir` and CI's `cargo test`
+//! runs with the default thread count, which flaked).
 
 use std::sync::Arc;
 
@@ -21,7 +21,7 @@ use serde_json::Value;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
-fn test_config() -> ServerConfig {
+fn test_config(project_root: &std::path::Path) -> ServerConfig {
     ServerConfig {
         host: "127.0.0.1".into(),
         port: 0,
@@ -29,21 +29,14 @@ fn test_config() -> ServerConfig {
         default_model: None,
         log: "off".into(),
         skills: Default::default(),
+        canvas_project_root_override: Some(project_root.to_path_buf()),
     }
 }
 
-/// RAII guard that restores the process CWD on drop.
-struct CwdGuard(std::path::PathBuf);
-impl Drop for CwdGuard {
-    fn drop(&mut self) {
-        let _ = std::env::set_current_dir(&self.0);
-    }
-}
-
-fn app() -> axum::Router {
+fn app(project_root: &std::path::Path) -> axum::Router {
     let store: Arc<dyn SessionStore> = Arc::new(SessionMemStore::default());
     let fact_store = FactStore::new(std::env::temp_dir().join(uuid::Uuid::new_v4().to_string()));
-    build_app(AppState::new(test_config(), store, fact_store))
+    build_app(AppState::new(test_config(project_root), store, fact_store))
 }
 
 async fn body_json(resp: axum::response::Response) -> (StatusCode, Value) {
@@ -59,12 +52,9 @@ async fn body_json(resp: axum::response::Response) -> (StatusCode, Value) {
 #[tokio::test]
 async fn empty_project_returns_empty_defaults() {
     let tmp = TempDir::new().unwrap();
-    let prev = std::env::current_dir().unwrap();
-    let _guard = CwdGuard(prev.clone());
-    std::env::set_current_dir(tmp.path()).unwrap();
 
     let (g_status, g_body) = body_json(
-        app()
+        app(tmp.path())
             .oneshot(
                 Request::builder()
                     .uri(CANVAS_GRAPH)
@@ -80,7 +70,7 @@ async fn empty_project_returns_empty_defaults() {
     assert_eq!(g_body["edges"], serde_json::json!([]));
 
     let (l_status, l_body) = body_json(
-        app()
+        app(tmp.path())
             .oneshot(
                 Request::builder()
                     .uri(CANVAS_LAYOUT)
@@ -104,9 +94,6 @@ async fn written_graph_is_returned_unchanged() {
     use mewcode_protocol::canvas::{Edge, EdgeKind, Graph, Node, NodeId, NodeKind};
 
     let tmp = TempDir::new().unwrap();
-    let prev = std::env::current_dir().unwrap();
-    let _guard = CwdGuard(prev.clone());
-    std::env::set_current_dir(tmp.path()).unwrap();
 
     let graph = Graph {
         version: 1,
@@ -139,7 +126,7 @@ async fn written_graph_is_returned_unchanged() {
     save_graph(tmp.path(), &graph).unwrap();
 
     let (status, body) = body_json(
-        app()
+        app(tmp.path())
             .oneshot(
                 Request::builder()
                     .uri(CANVAS_GRAPH)

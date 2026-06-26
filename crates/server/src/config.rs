@@ -55,7 +55,7 @@ pub const DEFAULT_LOG: &str = "info,mewcode_engine=debug";
 pub const ENV_PREFIX: &str = "MEWCODE_";
 
 /// Server configuration, loaded from `mewcode.toml` and the environment.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct ServerConfig {
     /// Host to bind to.
     #[serde(default = "default_host")]
@@ -75,6 +75,12 @@ pub struct ServerConfig {
     /// discovery locations (global + project + dev) are used.
     #[serde(default)]
     pub skills: SkillServerConfig,
+    /// Test seam: override the canvas project root without mutating
+    /// the process CWD. Skipped by serde so it cannot be set from
+    /// config files or env vars; only programmatic `with_*` builders
+    /// touch it. Production code never sets this.
+    #[serde(skip)]
+    pub canvas_project_root_override: Option<std::path::PathBuf>,
 }
 /// Skills subsection of [`ServerConfig`].
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -137,7 +143,21 @@ impl ServerConfig {
     /// method (not a field) so future overrides (CLI flag, env var,
     /// config file) can layer on without changing call sites.
     pub fn canvas_project_root(&self) -> std::path::PathBuf {
+        // Test override wins: tests use `with_canvas_project_root`
+        // to point at a tempdir without mutating process CWD (which
+        // would race with parallel tests in the same binary).
+        if let Some(p) = &self.canvas_project_root_override {
+            return p.clone();
+        }
         std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+    }
+
+    /// Return a clone of this config with the canvas project root
+    /// pinned to `path`. Test-only convenience: production config
+    /// loading never calls this.
+    pub fn with_canvas_project_root(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.canvas_project_root_override = Some(path.into());
+        self
     }
 }
 
