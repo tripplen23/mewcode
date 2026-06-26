@@ -64,10 +64,6 @@ fn init_langfuse_tracing() -> Option<SdkTracerProvider> {
         .with_host(&host)
         .with_basic_auth(&public_key, &secret_key)
         .with_timeout(Duration::from_secs(10))
-        // Route traces to Langfuse's Fast Preview (v4) ingestion path.
-        // Without this header, traces land in the legacy S3-batched path
-        // which can delay visibility by 10+ minutes.
-        // See: https://langfuse.com/faq/all/explore-observations-in-v4
         .with_header("x-langfuse-ingestion-version", "4")
         .build()
         .ok()?;
@@ -305,9 +301,6 @@ async fn agent_reads_readme_via_tool_call() {
     eprintln!("Tracer provider shut down, waiting for Langfuse to index...");
 
     // Retry loop: Langfuse batch export + indexing can take several seconds.
-    // With the v4 ingestion header (see `init_langfuse_tracing`) traces should
-    // appear in real-time; the 5s budget is the verification target from
-    // PHASES.md §"Phase 17 — Trace ingestion latency".
     let traces = {
         let started = std::time::Instant::now();
         let mut last_result = None;
