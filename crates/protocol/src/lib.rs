@@ -8,6 +8,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod canvas;
 pub mod env;
 pub mod event;
 pub mod message;
@@ -17,6 +18,7 @@ pub mod routes;
 pub mod skill;
 pub mod tool;
 
+pub use canvas::{Edge, EdgeKind, Graph, Layout, Node, NodeId, NodeKind, Point, ThemeName};
 pub use event::StreamEvent;
 pub use message::{Message, MessagePart, Role, ToolCall, ToolResult};
 pub use mode::{Mode, ModeParseError};
