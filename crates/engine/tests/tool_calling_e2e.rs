@@ -17,47 +17,36 @@ use mewcode_engine::tools::{MewcodeMemoryTool, ProjectContext, ReadFileTool, def
 use mewcode_protocol::tool::ToolContracts;
 use rig_core::tool::ToolDyn;
 
-fn fresh_data_dir() -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "mewcode-e2e-tool-test-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+// `tempfile::TempDir::new` uses `mkdtemp(3)` for atomic uniqueness. The
+// previous `SystemTime::as_nanos()` approach could collide under parallel
+// test threads, letting one test's `remove_dir_all` wipe another's file.
+
+fn fresh_data_dir() -> (tempfile::TempDir, std::path::PathBuf) {
+    let tmp = tempfile::TempDir::new().expect("create temp dir");
+    let path = tmp.path().to_path_buf();
+    (tmp, path)
 }
 
-fn fresh_project() -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "mewcode-e2e-proj-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(dir.join("src")).unwrap();
+fn fresh_project() -> (tempfile::TempDir, std::path::PathBuf) {
+    let tmp = tempfile::TempDir::new().expect("create temp project");
+    let dir = tmp.path().to_path_buf();
+    std::fs::create_dir(dir.join("src")).unwrap();
     std::fs::write(dir.join("src/lib.rs"), "pub fn hello() -> u32 { 42 }").unwrap();
     std::fs::write(
         dir.join("Cargo.toml"),
         "[package]\nname = \"test\"\nversion = \"0.1\"\n",
     )
     .unwrap();
-    dir
+    (tmp, dir)
 }
 
 #[tokio::test]
 async fn rig_tools_from_default_registry_is_non_empty() {
-    let data_dir = fresh_data_dir();
-    let store = MemoryStore::new(data_dir.clone());
-    let project = fresh_project();
+    let (_tmp_dir, data_dir) = fresh_data_dir();
+    let store = MemoryStore::new(data_dir);
+    let (_tmp_proj, project) = fresh_project();
     let skills = Arc::new(SkillRegistry::load_defaults());
-    let ctx = ProjectContext::new(project.clone());
+    let ctx = ProjectContext::new(project);
     let registry = default_registry(ctx, skills, Some(store), mewcode_protocol::Mode::Build);
 
     let tools = rig_tools(&registry);
@@ -73,15 +62,13 @@ async fn rig_tools_from_default_registry_is_non_empty() {
         tools.iter().any(|t| t.name() == "mewcode_memory"),
         "should include mewcode_memory"
     );
-
-    let _ = std::fs::remove_dir_all(&data_dir);
-    let _ = std::fs::remove_dir_all(&project);
+    // _tmp_dir and _tmp_proj drop here and clean up.
 }
 
 #[tokio::test]
 async fn adapter_call_dispatches_to_execute() {
-    let data_dir = fresh_data_dir();
-    let store = MemoryStore::new(data_dir.clone());
+    let (_tmp, data_dir) = fresh_data_dir();
+    let store = MemoryStore::new(data_dir);
     let tool = Arc::new(MewcodeMemoryTool::new(store)) as Arc<dyn ToolContracts>;
     let adapter = RigToolAdapter::new(tool);
 
@@ -105,14 +92,12 @@ async fn adapter_call_dispatches_to_execute() {
     let parsed: serde_json::Value =
         serde_json::from_str(&result).expect("output should be valid JSON");
     assert_eq!(parsed["content"], "User prefers Rust.");
-
-    let _ = std::fs::remove_dir_all(&data_dir);
 }
 
 #[tokio::test]
 async fn adapter_definition_matches_descriptor() {
-    let data_dir = fresh_data_dir();
-    let store = MemoryStore::new(data_dir.clone());
+    let (_tmp, data_dir) = fresh_data_dir();
+    let store = MemoryStore::new(data_dir);
     let tool = Arc::new(MewcodeMemoryTool::new(store)) as Arc<dyn ToolContracts>;
     let descriptor = tool.descriptor();
     let adapter = RigToolAdapter::new(tool);
@@ -122,14 +107,12 @@ async fn adapter_definition_matches_descriptor() {
     assert_eq!(def.parameters, descriptor.input_schema);
     assert_eq!(def.description, descriptor.description);
     assert!(!def.description.is_empty());
-
-    let _ = std::fs::remove_dir_all(&data_dir);
 }
 
 #[tokio::test]
 async fn adapter_call_read_file_returns_content() {
-    let project = fresh_project();
-    let ctx = ProjectContext::new(project.clone());
+    let (_tmp, project) = fresh_project();
+    let ctx = ProjectContext::new(project);
     let tool = Arc::new(ReadFileTool::new(ctx)) as Arc<dyn ToolContracts>;
     let adapter = RigToolAdapter::new(tool);
 
@@ -147,14 +130,12 @@ async fn adapter_call_read_file_returns_content() {
         content.contains("pub fn hello"),
         "should contain file contents"
     );
-
-    let _ = std::fs::remove_dir_all(&project);
 }
 
 #[tokio::test]
 async fn adapter_call_with_invalid_args_returns_error_payload() {
-    let data_dir = fresh_data_dir();
-    let store = MemoryStore::new(data_dir.clone());
+    let (_tmp, data_dir) = fresh_data_dir();
+    let store = MemoryStore::new(data_dir);
     let tool = Arc::new(MewcodeMemoryTool::new(store)) as Arc<dyn ToolContracts>;
     let adapter = RigToolAdapter::new(tool);
 
@@ -168,14 +149,12 @@ async fn adapter_call_with_invalid_args_returns_error_payload() {
         serde_json::from_str(&result).expect("error should be valid JSON");
     assert_eq!(parsed["error"], true);
     assert_eq!(parsed["kind"], "invalid_input");
-
-    let _ = std::fs::remove_dir_all(&data_dir);
 }
 
 #[tokio::test]
 async fn adapter_call_with_malformed_json_returns_error_payload() {
-    let data_dir = fresh_data_dir();
-    let store = MemoryStore::new(data_dir.clone());
+    let (_tmp, data_dir) = fresh_data_dir();
+    let store = MemoryStore::new(data_dir);
     let tool = Arc::new(MewcodeMemoryTool::new(store)) as Arc<dyn ToolContracts>;
     let adapter = RigToolAdapter::new(tool);
 
@@ -196,6 +175,4 @@ async fn adapter_call_with_malformed_json_returns_error_payload() {
             .contains("invalid JSON"),
         "error message should mention invalid JSON"
     );
-
-    let _ = std::fs::remove_dir_all(&data_dir);
 }
