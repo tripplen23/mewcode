@@ -10,9 +10,7 @@ use crate::net::{ModelEntry, Session, SessionSummary};
 pub enum Msg {
     /// A key was pressed.
     Key(KeyEvent),
-    /// A mouse event arrived. Currently ignored by every screen
-    /// (no behaviour change); the variant exists so T5 (canvas
-    /// navigation) can attach handlers in a follow-up PR.
+    /// A mouse event arrived.
     Mouse(MouseEvent),
     /// A periodic tick (for animations / elapsed time).
     Tick,

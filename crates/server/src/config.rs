@@ -139,9 +139,7 @@ impl SkillServerConfig {
 impl ServerConfig {
     /// Project root for canvas file I/O. Defaults to the server's
     /// current working directory so the canvas lives wherever the
-    /// user launched the server. The resolution is exposed as a
-    /// method (not a field) so future overrides (CLI flag, env var,
-    /// config file) can layer on without changing call sites.
+    /// user launched the server.
     pub fn canvas_project_root(&self) -> std::path::PathBuf {
         // Test override wins: tests use `with_canvas_project_root`
         // to point at a tempdir without mutating process CWD (which

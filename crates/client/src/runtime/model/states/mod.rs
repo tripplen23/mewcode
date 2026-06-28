@@ -54,16 +54,14 @@ impl Default for App {
 /// Holds the loaded graph + layout as-is from the server, plus a
 /// per-screen selection / viewport / status. Positions are read
 /// from `layout.positions` directly; missing positions are filled
-/// by the view layer's `auto_layout` call (kept here as a
-/// `HashMap` snapshot for hit-testing later).
+/// by the view layer's `auto_layout` call.
 #[derive(Debug, Default)]
 pub struct CanvasState {
     /// Semantic graph (source of truth).
     pub graph: Graph,
     /// Presentation overlay (positions + theme).
     pub layout: Layout,
-    /// Currently selected node id, if any. T5 (canvas navigation)
-    /// will mutate this in response to `Msg::Mouse` / arrow keys.
+    /// Currently selected node id, if any.
     pub selected: Option<NodeId>,
     /// `true` while the canvas HTTP fetch is in flight; the view
     /// shows a spinner instead of boxes.
@@ -93,9 +91,7 @@ pub enum Screen {
     NewSession(NewSessionState),
     /// An open chat session.
     Session(SessionState),
-    /// Architecture canvas: graph + layout read-only render. T4
-    /// ships the screen and the load; T5 adds navigation; T6 adds
-    /// the engine tools that mutate the graph.
+    /// Architecture canvas: graph + layout read-only render.
     Canvas(CanvasState),
 }
 
