@@ -21,6 +21,7 @@ use ratatui::Frame;
 
 use super::model::{App, Screen};
 
+mod canvas;
 mod home;
 mod markdown;
 mod new_session;
@@ -33,6 +34,7 @@ pub use markdown::highlight_code_block;
 pub use spinner::spinner_frame;
 pub use toast::toast_alpha;
 
+use canvas::render_canvas;
 use home::render_home;
 use new_session::render_new_session;
 use session::render_session;
@@ -45,6 +47,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         Screen::Home(h) => render_home(frame, area, h),
         Screen::NewSession(n) => render_new_session(frame, area, n),
         Screen::Session(s) => render_session(frame, area, s),
+        Screen::Canvas(c) => render_canvas(frame, area, c),
     }
 
     if let Some(toast) = &app.toast {

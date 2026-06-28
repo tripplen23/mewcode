@@ -10,8 +10,8 @@ mod msg;
 mod states;
 
 pub use cmd::Cmd;
-pub use msg::{CreateError, Msg, StreamMsg};
+pub use msg::{CanvasData, CreateError, Msg, StreamMsg};
 pub use states::{
-    App, HomeState, ModelPicker, NewSessionField, NewSessionState, Overlay, Screen, SessionState,
-    StreamingState, Toast, ToastKind, ToolCallView,
+    App, CanvasState, HomeState, ModelPicker, NewSessionField, NewSessionState, Overlay, Screen,
+    SessionState, StreamingState, Toast, ToastKind, ToolCallView,
 };

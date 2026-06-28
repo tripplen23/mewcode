@@ -1,6 +1,7 @@
 use uuid::Uuid;
 
 use crossterm::event::{KeyEvent, MouseEvent};
+use mewcode_protocol::canvas::{Graph, Layout};
 
 use crate::net::{ModelEntry, Session, SessionSummary};
 
@@ -23,6 +24,25 @@ pub enum Msg {
     SessionOpened(Result<Session, String>),
     /// A streaming event arrived.
     Stream(StreamMsg),
+    /// The project's canvas finished loading (both graph and
+    /// layout fetched in parallel). A failure short-circuits —
+    /// `Err` means at least one of the two HTTP calls failed; the
+    /// Canvas screen surfaces a toast and stays in its previous
+    /// state.
+    CanvasLoaded(Result<CanvasData, String>),
+}
+
+/// Result of a successful canvas load: the graph + the layout
+/// (positions + theme) as fetched from the server. Auto-layout is
+/// *not* applied at this layer — the view layer resolves missing
+/// positions with the engine's `auto_layout` after both fields
+/// land, so the load stays a pure wire-format deserialization.
+#[derive(Debug, Clone)]
+pub struct CanvasData {
+    /// Semantic graph (source of truth).
+    pub graph: Graph,
+    /// Presentation overlay (positions + theme).
+    pub layout: Layout,
 }
 
 /// Why a `POST /sessions` failed.

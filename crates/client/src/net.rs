@@ -2,8 +2,11 @@
 
 use eventsource_stream::Eventsource;
 use futures::{Stream, StreamExt};
+use mewcode_protocol::canvas::{Graph, Layout};
 use mewcode_protocol::event::ChatRequest;
-use mewcode_protocol::routes::{CHAT, HEALTH, MODELS, SESSION_BY_ID, SESSIONS};
+use mewcode_protocol::routes::{
+    CANVAS_GRAPH, CANVAS_LAYOUT, CHAT, HEALTH, MODELS, SESSION_BY_ID, SESSIONS,
+};
 use mewcode_protocol::{Message, Mode, ModelId, ModelKind, StreamEvent};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -175,6 +178,32 @@ impl ApiClient {
         let resp = self
             .inner
             .get(format!("{}{}", self.base_url, path))
+            .send()
+            .await?;
+        let bytes = ensure_success(resp)?.bytes().await?;
+        Ok(serde_json::from_slice(&bytes)?)
+    }
+
+    /// `GET /canvas/graph` — read the project's canvas graph.
+    pub async fn get_graph(&self) -> Result<Graph, NetError> {
+        let resp = self
+            .inner
+            .get(format!("{}{}", self.base_url, CANVAS_GRAPH))
+            .send()
+            .await?;
+        let bytes = ensure_success(resp)?.bytes().await?;
+        Ok(serde_json::from_slice(&bytes)?)
+    }
+
+    /// `GET /canvas/layout` — read the project's canvas layout
+    /// (positions + theme; auto-layout is *not* applied server-side
+    /// — the client resolves missing positions with
+    /// `mewcode_engine::canvas::layout::auto_layout` after both
+    /// fetches land).
+    pub async fn get_layout(&self) -> Result<Layout, NetError> {
+        let resp = self
+            .inner
+            .get(format!("{}{}", self.base_url, CANVAS_LAYOUT))
             .send()
             .await?;
         let bytes = ensure_success(resp)?.bytes().await?;

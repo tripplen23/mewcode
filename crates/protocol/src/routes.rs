@@ -27,3 +27,9 @@ pub const MEMORY_GET: &str = "/memory";
 
 /// `POST /memory` — write to the active memory profile.
 pub const MEMORY_POST: &str = "/memory";
+
+/// `GET /canvas/graph` — read the project's canvas graph.
+pub const CANVAS_GRAPH: &str = "/canvas/graph";
+
+/// `GET /canvas/layout` — read the project's canvas layout.
+pub const CANVAS_LAYOUT: &str = "/canvas/layout";

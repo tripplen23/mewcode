@@ -14,11 +14,13 @@ use super::model::{
     App, Cmd, CreateError, ModelPicker, Msg, NewSessionField, Screen, SessionState, Toast,
 };
 
+mod canvas;
 mod home;
 mod new_session;
 mod session;
 mod stream;
 
+use canvas::{apply_canvas_loaded, on_canvas_key};
 use home::on_home_key;
 use new_session::on_new_session_key;
 use session::on_session_key;
@@ -42,12 +44,25 @@ pub fn update(app: &mut App, msg: Msg) -> Cmd {
             Screen::Home(_) => on_home_key(screen, should_quit, key),
             Screen::NewSession(_) => on_new_session_key(screen, toast, key),
             Screen::Session(_) => on_session_key(screen, toast, key),
+            Screen::Canvas(_) => on_canvas_key(screen, key),
         },
-
-        // Mouse events arrive at the event loop.
+        // Mouse events arrive at the event loop (T3 enabled them) but
+        // no screen consumes them yet. T5 (canvas navigation) will
+        // attach handlers in a follow-up PR.
         Msg::Mouse(_) => Cmd::None,
 
         Msg::Tick => Cmd::None,
+
+        Msg::CanvasLoaded(result) => {
+            // Only mutates the screen if the user is still on the
+            // Canvas — a load that finishes after the user has
+            // left is dropped, mirroring how a stale
+            // `SessionsLoaded` would be ignored on Home.
+            if let Screen::Canvas(c) = screen {
+                apply_canvas_loaded(c, toast, result);
+            }
+            Cmd::None
+        }
 
         Msg::SessionsLoaded(result) => {
             if let Screen::Home(h) = screen {

@@ -18,4 +18,8 @@ pub enum Cmd {
     OpenSession(Uuid),
     /// Start a chat turn.
     StartChat(ChatRequest),
+    /// Fetch the project's canvas (graph + layout) and transition
+    /// into the Canvas screen. The server resolves the project
+    /// root from its own CWD; the client does not need a path.
+    LoadCanvas,
 }

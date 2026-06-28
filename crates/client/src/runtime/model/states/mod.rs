@@ -7,6 +7,9 @@
 
 use std::time::Instant;
 
+use mewcode_protocol::canvas::NodeId;
+use mewcode_protocol::canvas::{Graph, Layout};
+
 mod home;
 mod new_session;
 mod session;
@@ -46,6 +49,38 @@ impl Default for App {
     }
 }
 
+/// State backing [`super::Screen::Canvas`].
+///
+/// Holds the loaded graph + layout as-is from the server, plus a
+/// per-screen selection / viewport / status. Positions are read
+/// from `layout.positions` directly; missing positions are filled
+/// by the view layer's `auto_layout` call.
+#[derive(Debug, Default)]
+pub struct CanvasState {
+    /// Semantic graph (source of truth).
+    pub graph: Graph,
+    /// Presentation overlay (positions + theme).
+    pub layout: Layout,
+    /// Currently selected node id, if any.
+    pub selected: Option<NodeId>,
+    /// `true` while the canvas HTTP fetch is in flight; the view
+    /// shows a spinner instead of boxes.
+    pub loading: bool,
+}
+
+impl CanvasState {
+    /// A Canvas screen in its initial loading state, before the
+    /// HTTP fetch returns.
+    pub fn loading() -> Self {
+        Self {
+            graph: Graph::default(),
+            layout: Layout::default(),
+            selected: None,
+            loading: true,
+        }
+    }
+}
+
 /// The set of screens the TUI can show. Data lives inside each variant so
 /// illegal states (e.g. a session view with no session) are unrepresentable.
 #[derive(Debug)]
@@ -56,6 +91,8 @@ pub enum Screen {
     NewSession(NewSessionState),
     /// An open chat session.
     Session(SessionState),
+    /// Architecture canvas: graph + layout read-only render.
+    Canvas(CanvasState),
 }
 
 /// Severity of a [`Toast`].

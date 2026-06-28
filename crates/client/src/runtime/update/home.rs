@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use super::super::model::{Cmd, NewSessionState, Screen};
+use super::super::model::{CanvasState, Cmd, NewSessionState, Screen};
 
 /// Home screen: list navigation and the transitions out of it.
 ///
@@ -14,6 +14,16 @@ pub(super) fn on_home_key(screen: &mut Screen, should_quit: &mut bool, key: KeyE
         KeyCode::Char('n') => {
             *screen = Screen::NewSession(NewSessionState::default());
             Cmd::LoadModels
+        }
+        KeyCode::Char('c') => {
+            // Open the canvas. Push the loading state and fire
+            // the load command. The transition happens before
+            // the load fires, so the user sees the "loading…"
+            // status row immediately (the toast slot is
+            // untouched — the load's failure path raises its
+            // own toast in `apply_canvas_loaded`).
+            *screen = Screen::Canvas(CanvasState::loading());
+            Cmd::LoadCanvas
         }
         KeyCode::Up => {
             if let Screen::Home(h) = screen {
