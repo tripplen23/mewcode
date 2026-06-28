@@ -10,21 +10,17 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tui_textarea::{Input, Key};
 
-use super::model::{
-    App, Cmd, CreateError, ModelPicker, Msg, NewSessionField, Screen, SessionState, Toast,
-};
+use super::model::{App, Cmd, CreateError, ModelPicker, Msg, NewSessionField, Screen, Toast};
 
-mod canvas;
 mod home;
 mod new_session;
-mod session;
 mod stream;
+mod workspace;
 
-use canvas::{apply_canvas_loaded, on_canvas_key};
 use home::on_home_key;
 use new_session::on_new_session_key;
-use session::on_session_key;
 use stream::apply_stream_event;
+use workspace::{apply_canvas_loaded, on_workspace_key, on_workspace_mouse, workspace_submit};
 
 /// Apply a [`Msg`] to the model, returning the side effect to run next.
 ///
@@ -43,23 +39,25 @@ pub fn update(app: &mut App, msg: Msg) -> Cmd {
         Msg::Key(key) => match screen {
             Screen::Home(_) => on_home_key(screen, should_quit, key),
             Screen::NewSession(_) => on_new_session_key(screen, toast, key),
-            Screen::Session(_) => on_session_key(screen, toast, key),
-            Screen::Canvas(_) => on_canvas_key(screen, key),
+            Screen::Workspace(_) => on_workspace_key(screen, toast, key),
         },
-        // Mouse events arrive at the event loop (T3 enabled them) but
-        // no screen consumes them yet. T5 (canvas navigation) will
-        // attach handlers in a follow-up PR.
-        Msg::Mouse(_) => Cmd::None,
+
+        Msg::Mouse(mouse) => match screen {
+            Screen::Workspace(_) => on_workspace_mouse(screen, mouse),
+            // Mouse on Home/NewSession is ignored — the screens
+            // don't yet consume it.
+            _ => Cmd::None,
+        },
 
         Msg::Tick => Cmd::None,
 
         Msg::CanvasLoaded(result) => {
-            // Only mutates the screen if the user is still on the
-            // Canvas — a load that finishes after the user has
-            // left is dropped, mirroring how a stale
-            // `SessionsLoaded` would be ignored on Home.
-            if let Screen::Canvas(c) = screen {
-                apply_canvas_loaded(c, toast, result);
+            // Only mutates the screen if the user is still in a
+            // Workspace — a load that finishes after the user
+            // has left is dropped, mirroring how a stale
+            // `SessionsLoaded` is ignored on Home.
+            if let Screen::Workspace(ws) = screen {
+                apply_canvas_loaded(ws, toast, result);
             }
             Cmd::None
         }
@@ -94,37 +92,68 @@ pub fn update(app: &mut App, msg: Msg) -> Cmd {
             Cmd::None
         }
 
-        Msg::SessionCreated(result) => match result {
-            Ok(session) => {
-                // Land in the new session, which starts with empty history.
-                *screen = Screen::Session(SessionState::new(session));
-                Cmd::None
-            }
-            // The server rejected an empty title — keep focus on Title,
-            // retain the entered values, and show the required-title hint.
-            Err(CreateError::EmptyTitle(_)) => {
-                if let Screen::NewSession(n) = screen {
-                    n.submitting = false;
-                    n.field = NewSessionField::Title;
-                    n.error = Some(new_session::REQUIRED_TITLE_HINT.to_string());
+        Msg::SessionCreated(result) => {
+            // Two callers: the NewSession form and the Workspace
+            // auto-create path. The Workspace path attaches the
+            // new session to its chat region and (if there was
+            // a pending prompt) submits it.
+            if let Screen::Workspace(ws) = screen {
+                match result {
+                    Ok(session) => {
+                        // Drain the prompt text *before* attaching
+                        // the new session, so we don't fight the
+                        // borrow checker (the chat's `TextArea`
+                        // would live inside `ws`).
+                        let chat_text = ws.pending_prompt.take();
+                        super::model::attach_session(ws, session);
+                        if let (Some(text), Some(s)) = (chat_text, ws.chat.as_mut()) {
+                            return workspace_submit(s, toast, text);
+                        }
+                        Cmd::None
+                    }
+                    Err(e) => {
+                        *toast = Some(Toast::error(e.to_string()));
+                        Cmd::None
+                    }
                 }
-                Cmd::None
-            }
-            // Any other failure — stay on NewSession, retain title/model/
-            // mode, clear the in-flight flag, and set the persistent error.
-            Err(CreateError::Other(message)) => {
-                if let Screen::NewSession(n) = screen {
-                    n.submitting = false;
-                    n.error = Some(message);
+            } else if let Screen::NewSession(n) = screen {
+                match result {
+                    Ok(session) => {
+                        // Land in the new session, which starts with empty history.
+                        *screen = Screen::Workspace(super::model::WorkspaceState::loading_canvas());
+                        if let Screen::Workspace(ws) = screen {
+                            super::model::attach_session(ws, session);
+                        }
+                        Cmd::LoadCanvas
+                    }
+                    Err(CreateError::EmptyTitle(_)) => {
+                        n.submitting = false;
+                        n.field = NewSessionField::Title;
+                        n.error = Some(new_session::REQUIRED_TITLE_HINT.to_string());
+                        Cmd::None
+                    }
+                    Err(CreateError::Other(message)) => {
+                        n.submitting = false;
+                        n.error = Some(message);
+                        Cmd::None
+                    }
                 }
+            } else {
                 Cmd::None
             }
-        },
+        }
 
         Msg::SessionOpened(result) => match result {
             Ok(session) => {
-                *screen = Screen::Session(SessionState::new(session));
-                Cmd::None
+                // From any screen, `Msg::SessionOpened` lands the
+                // user in a Workspace with the session attached.
+                // Home + `Cmd::OpenSession` fires this; the test
+                // suite relies on the transition happening here.
+                *screen = Screen::Workspace(super::model::WorkspaceState::loading_canvas());
+                if let Screen::Workspace(ws) = screen {
+                    super::model::attach_session(ws, session);
+                }
+                Cmd::LoadCanvas
             }
             Err(e) => {
                 *toast = Some(Toast::error(e));
@@ -133,9 +162,16 @@ pub fn update(app: &mut App, msg: Msg) -> Cmd {
         },
 
         Msg::Stream(ev) => {
-            if let Screen::Session(s) = screen {
-                if let Some(t) = apply_stream_event(s, ev) {
-                    *toast = Some(t);
+            // Streams route to the Workspace's chat region. A
+            // stream event landing when the user has no chat is
+            // a programmer error — the loop only starts streams
+            // from a Workspace submit — so we silently drop it
+            // rather than panic.
+            if let Screen::Workspace(ws) = screen {
+                if let Some(s) = ws.chat.as_mut() {
+                    if let Some(t) = apply_stream_event(s, ev) {
+                        *toast = Some(t);
+                    }
                 }
             }
             Cmd::None
@@ -180,3 +216,9 @@ pub(super) fn key_to_input(key: KeyEvent) -> Input {
         shift: key.modifiers.contains(KeyModifiers::SHIFT),
     }
 }
+
+// Public re-exports for the workspace T5 nav primitives. Used by
+// the integration tests in `tests/workspace_screen.rs` to
+// exercise hit-test and nearest-in-direction without going
+// through the full `update` entry point.
+pub use workspace::{Direction, hit_test, nearest_in_direction};

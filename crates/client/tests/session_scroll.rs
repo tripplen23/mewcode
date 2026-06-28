@@ -11,7 +11,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use uuid::Uuid;
 
 use mewcode_client::net::Session;
-use mewcode_client::runtime::model::{App, Msg, Screen, SessionState};
+use mewcode_client::runtime::model::{App, Msg, Screen, SessionState, WorkspaceState};
 use mewcode_client::runtime::update;
 use mewcode_client::runtime::view::render;
 use mewcode_protocol::{Message, MessagePart, Mode, ModelId};
@@ -39,13 +39,13 @@ fn app_with_long_transcript() -> App {
         messages,
     };
     let mut app = App::new();
-    app.screen = Screen::Session(SessionState::new(session));
+    app.screen = Screen::Workspace(WorkspaceState::with_session(SessionState::new(session)));
     app
 }
 
 fn draw(app: &mut App) -> String {
-    // A short, narrow viewport so the 40-message transcript overflows it.
-    let mut terminal = Terminal::new(TestBackend::new(40, 12)).unwrap();
+    // A narrow, short viewport so the 40-message transcript overflows it.
+    let mut terminal = Terminal::new(TestBackend::new(40, 20)).unwrap();
     terminal.draw(|frame| render(frame, app)).unwrap();
     terminal.backend().to_string()
 }
@@ -66,7 +66,7 @@ fn press_until(app: &mut App, code: KeyCode, done: impl Fn(&SessionState) -> boo
 
 fn session(app: &App) -> &SessionState {
     match &app.screen {
-        Screen::Session(s) => s,
+        Screen::Workspace(ws) => ws.chat.as_ref().unwrap(),
         other => panic!("expected Session, got {other:?}"),
     }
 }

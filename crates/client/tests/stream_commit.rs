@@ -33,7 +33,7 @@ fn session_app() -> App {
         messages: vec![],
     };
     update(&mut app, Msg::SessionOpened(Ok(session)));
-    assert!(matches!(app.screen, Screen::Session(_)));
+    assert!(matches!(app.screen, Screen::Workspace(_)));
     app
 }
 
@@ -47,7 +47,7 @@ fn start_turn(app: &mut App) {
 
 fn session_state(app: &App) -> &SessionState {
     match &app.screen {
-        Screen::Session(s) => s,
+        Screen::Workspace(ws) => ws.chat.as_ref().unwrap(),
         _ => panic!("expected Session screen"),
     }
 }

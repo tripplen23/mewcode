@@ -58,6 +58,15 @@ pub enum CreateError {
     Other(String),
 }
 
+impl std::fmt::Display for CreateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CreateError::EmptyTitle(s) => write!(f, "{s}"),
+            CreateError::Other(s) => write!(f, "{s}"),
+        }
+    }
+}
+
 /// Streaming sub-messages, decoded from server SSE events.
 #[derive(Debug)]
 pub enum StreamMsg {

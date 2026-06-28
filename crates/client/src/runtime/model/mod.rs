@@ -1,9 +1,9 @@
 //! The application model for the Elm-style runtime.
 //!
 //! > Idiom: make illegal states unrepresentable. Each [`Screen`] variant owns
-//! > its own state, so the chat view ([`Screen::Session`]) can never exist
-//! > without a hydrated [`crate::net::Session`] — the compiler guarantees it,
-//! > and there are no `Option` fields to forget to populate.
+//! > its own state, so the workspace view ([`Screen::Workspace`]) can never
+//! > exist without its canvas and (optionally) chat — the compiler
+//! > guarantees it, and there are no `Option` fields to forget to populate.
 
 mod cmd;
 mod msg;
@@ -13,5 +13,6 @@ pub use cmd::Cmd;
 pub use msg::{CanvasData, CreateError, Msg, StreamMsg};
 pub use states::{
     App, CanvasState, HomeState, ModelPicker, NewSessionField, NewSessionState, Overlay, Screen,
-    SessionState, StreamingState, Toast, ToastKind, ToolCallView,
+    SessionState, StreamingState, Toast, ToastKind, ToolCallView, WorkspaceFocus, WorkspaceState,
+    attach_session, drain_prompt,
 };

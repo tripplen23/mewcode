@@ -4,19 +4,23 @@
 //! cross-screen UI primitive. The remaining structs are split per screen
 //! (matching the layout in [`super::super::view`] and [`super::super::update`])
 //! so the file you open matches the file you'd change.
+//!
+//! M1's screen set is the doc-faithful `Workspace` (canvas + chat
+//! docked together per `ui-aesthetic.md` §3), the launcher Home, and
+//! the NewSession form. The old `Screen::Canvas` and `Screen::Session`
+//! are gone — both are absorbed into `Workspace`.
 
 use std::time::Instant;
-
-use mewcode_protocol::canvas::NodeId;
-use mewcode_protocol::canvas::{Graph, Layout};
 
 mod home;
 mod new_session;
 mod session;
+mod workspace;
 
 pub use home::HomeState;
 pub use new_session::{ModelPicker, NewSessionField, NewSessionState};
 pub use session::{Overlay, SessionState, StreamingState, ToolCallView};
+pub use workspace::{CanvasState, WorkspaceFocus, WorkspaceState, attach_session, drain_prompt};
 
 /// The whole application state.
 ///
@@ -49,50 +53,24 @@ impl Default for App {
     }
 }
 
-/// State backing [`super::Screen::Canvas`].
-///
-/// Holds the loaded graph + layout as-is from the server, plus a
-/// per-screen selection / viewport / status. Positions are read
-/// from `layout.positions` directly; missing positions are filled
-/// by the view layer's `auto_layout` call.
-#[derive(Debug, Default)]
-pub struct CanvasState {
-    /// Semantic graph (source of truth).
-    pub graph: Graph,
-    /// Presentation overlay (positions + theme).
-    pub layout: Layout,
-    /// Currently selected node id, if any.
-    pub selected: Option<NodeId>,
-    /// `true` while the canvas HTTP fetch is in flight; the view
-    /// shows a spinner instead of boxes.
-    pub loading: bool,
-}
-
-impl CanvasState {
-    /// A Canvas screen in its initial loading state, before the
-    /// HTTP fetch returns.
-    pub fn loading() -> Self {
-        Self {
-            graph: Graph::default(),
-            layout: Layout::default(),
-            selected: None,
-            loading: true,
-        }
-    }
-}
-
 /// The set of screens the TUI can show. Data lives inside each variant so
-/// illegal states (e.g. a session view with no session) are unrepresentable.
+/// illegal states (e.g. a workspace without a project) are unrepresentable.
+///
+/// The `Workspace` variant is the largest by design — it carries the
+/// canvas, the chat, and the focus state. Boxing it (per clippy's
+/// `large_enum_variant` lint) would add an allocation on every
+/// `Screen::Workspace` transition. For three screens in a TUI the
+/// straight-line cost is fine; the extra indirection is not.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum Screen {
     /// Session list / launcher.
     Home(HomeState),
     /// New-session creation form.
     NewSession(NewSessionState),
-    /// An open chat session.
-    Session(SessionState),
-    /// Architecture canvas: graph + layout read-only render.
-    Canvas(CanvasState),
+    /// The unified workspace: canvas + chat, doc-faithful per
+    /// `ui-aesthetic.md` §3.
+    Workspace(WorkspaceState),
 }
 
 /// Severity of a [`Toast`].

@@ -70,11 +70,12 @@ fn ok_transitions_to_session_with_empty_history() {
     update(&mut app, Msg::SessionCreated(Ok(session)));
 
     match &app.screen {
-        Screen::Session(s) => {
+        Screen::Workspace(ws) => {
+            let s = ws.chat.as_ref().expect("session was created");
             assert_eq!(s.session.id, id);
             assert!(s.session.messages.is_empty(), "new session starts empty");
         }
-        other => panic!("expected Session, got {other:?}"),
+        other => panic!("expected Workspace, got {other:?}"),
     }
 }
 

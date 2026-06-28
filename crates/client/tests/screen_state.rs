@@ -6,7 +6,9 @@
 //! data it was given.
 
 use mewcode_client::net::Session;
-use mewcode_client::runtime::model::{HomeState, NewSessionState, Screen, SessionState};
+use mewcode_client::runtime::model::{
+    HomeState, NewSessionState, Screen, SessionState, WorkspaceState,
+};
 use mewcode_protocol::{Mode, ModelId};
 
 #[test]
@@ -27,7 +29,10 @@ fn new_session_variant_carries_its_state() {
 #[test]
 fn session_variant_cannot_exist_without_a_session() {
     // `SessionState::new` *requires* a `Session` argument — there is no way to
-    // build a `Screen::Session` without hydrated data. That is the property.
+    // build a `Screen::Workspace` with a hydrated session in its chat
+    // region. The Workspace owns the session, but the property still
+    // holds: a session with empty messages is still a session, and a
+    // missing session makes the chat region an explicit `None`.
     let session = Session {
         id: uuid::Uuid::new_v4(),
         title: "demo".to_string(),
@@ -39,9 +44,9 @@ fn session_variant_cannot_exist_without_a_session() {
     };
     let session_id = session.id;
 
-    let screen = Screen::Session(SessionState::new(session));
+    let screen = Screen::Workspace(WorkspaceState::with_session(SessionState::new(session)));
     match screen {
-        Screen::Session(state) => assert_eq!(state.session.id, session_id),
+        Screen::Workspace(ws) => assert_eq!(ws.chat.as_ref().unwrap().session.id, session_id),
         _ => panic!("expected Session"),
     }
 }

@@ -1,7 +1,7 @@
 //! T4 canvas screen: model + key binding + load result handling.
 //!
 //! Pure tests, no real terminal. Pinned:
-//! - Home `'c'` pushes `Screen::Canvas(loading)` and returns
+//! - Home `'c'` pushes `Screen::Workspace` (with loading canvas) and returns
 //!   `Cmd::LoadCanvas`.
 //! - `Msg::CanvasLoaded(Ok(...))` populates graph + layout and
 //!   clears `loading`.
@@ -12,7 +12,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use mewcode_client::runtime::model::{App, CanvasData, CanvasState, Msg, Screen};
+use mewcode_client::runtime::model::{App, CanvasData, Msg, Screen, WorkspaceState};
 use mewcode_client::runtime::update::update;
 use mewcode_protocol::canvas::{Edge, EdgeKind, Graph, Layout, Node, NodeId, NodeKind};
 
@@ -88,19 +88,19 @@ fn pressing_c_on_home_enters_canvas_loading() {
         mewcode_client::runtime::model::Cmd::LoadCanvas
     ));
     match &app.screen {
-        Screen::Canvas(c) => {
-            assert!(c.loading, "fresh canvas should be in loading state");
-            assert!(c.graph.nodes.is_empty());
-            assert!(c.layout.positions.is_empty());
+        Screen::Workspace(ws) => {
+            assert!(ws.canvas.loading, "fresh canvas should be in loading state");
+            assert!(ws.canvas.graph.nodes.is_empty());
+            assert!(ws.canvas.layout.positions.is_empty());
         }
-        other => panic!("expected Screen::Canvas, got {other:?}"),
+        other => panic!("expected Screen::Workspace, got {other:?}"),
     }
 }
 
 #[test]
 fn canvas_loaded_ok_populates_state() {
     let mut app = App::new();
-    app.screen = Screen::Canvas(CanvasState::loading());
+    app.screen = Screen::Workspace(WorkspaceState::loading_canvas());
 
     let data = CanvasData {
         graph: three_node_graph(),
@@ -109,13 +109,13 @@ fn canvas_loaded_ok_populates_state() {
     update(&mut app, Msg::CanvasLoaded(Ok(data)));
 
     match &app.screen {
-        Screen::Canvas(c) => {
-            assert!(!c.loading);
-            assert_eq!(c.graph.nodes.len(), 3);
-            assert_eq!(c.graph.edges.len(), 2);
-            assert!(c.selected.is_none());
+        Screen::Workspace(ws) => {
+            assert!(!ws.canvas.loading);
+            assert_eq!(ws.canvas.graph.nodes.len(), 3);
+            assert_eq!(ws.canvas.graph.edges.len(), 2);
+            assert!(ws.canvas.selected.is_none());
         }
-        other => panic!("expected Screen::Canvas, got {other:?}"),
+        other => panic!("expected Screen::Workspace, got {other:?}"),
     }
     assert!(app.toast.is_none());
 }
@@ -123,7 +123,7 @@ fn canvas_loaded_ok_populates_state() {
 #[test]
 fn canvas_loaded_err_raises_toast_and_keeps_state() {
     let mut app = App::new();
-    app.screen = Screen::Canvas(CanvasState::loading());
+    app.screen = Screen::Workspace(WorkspaceState::loading_canvas());
     let prior_toast = app.toast.clone();
     assert!(prior_toast.is_none());
 
@@ -133,11 +133,11 @@ fn canvas_loaded_err_raises_toast_and_keeps_state() {
     );
 
     match &app.screen {
-        Screen::Canvas(c) => {
-            assert!(!c.loading, "loading flag must clear even on error");
-            assert!(c.graph.nodes.is_empty(), "graph untouched on error");
+        Screen::Workspace(ws) => {
+            assert!(!ws.canvas.loading, "loading flag must clear even on error");
+            assert!(ws.canvas.graph.nodes.is_empty(), "graph untouched on error");
         }
-        other => panic!("expected Screen::Canvas, got {other:?}"),
+        other => panic!("expected Screen::Workspace, got {other:?}"),
     }
     let toast = app.toast.expect("error toast should be set");
     assert!(toast.text.contains("canvas load failed"));
@@ -180,7 +180,7 @@ fn canvas_loaded_ignored_when_user_left_screen() {
 fn esc_on_canvas_returns_to_home_and_refetches_sessions() {
     let mut app = App::new();
     // Put the user on the canvas.
-    app.screen = Screen::Canvas(CanvasState::loading());
+    app.screen = Screen::Workspace(WorkspaceState::loading_canvas());
 
     let cmd = update(&mut app, Msg::Key(key(KeyCode::Esc)));
 

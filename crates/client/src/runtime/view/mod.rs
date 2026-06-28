@@ -1,7 +1,7 @@
 //! Per-screen rendering: turns the model into pixels on the terminal.
 //!
 //! Given a model, the view paints a single frame and returns. It is a pure
-//! function of the model with one exception: the session renderer writes
+//! function of the model with one exception: the chat renderer writes
 //! `scroll`/`max_scroll`/`viewport` back during the draw, because the wrapped
 //! line count is only known once [ratatui](https://docs.rs/ratatui/latest/ratatui/)
 //! has actually wrapped the text.
@@ -16,29 +16,33 @@
 //! Rather than bridge the two `Widget` traits, the editors are rendered by
 //! reading the textarea's `.lines()` and drawing them as a plain ratatui 0.30
 //! `Paragraph`.
+//!
+//! M1's screen set is the doc-faithful `Workspace` (canvas + chat docked
+//! together per `ui-aesthetic.md` §3), the launcher Home, and the
+//! NewSession form.
 
 use ratatui::Frame;
 
 use super::model::{App, Screen};
 
-mod canvas;
 mod home;
 mod markdown;
 mod new_session;
 mod overlay;
-mod session;
 mod spinner;
+mod theme;
 mod toast;
+mod workspace;
 
 pub use markdown::highlight_code_block;
 pub use spinner::spinner_frame;
+pub use theme::style as theme_style;
 pub use toast::toast_alpha;
 
-use canvas::render_canvas;
 use home::render_home;
 use new_session::render_new_session;
-use session::render_session;
 use toast::render_toast;
+use workspace::render_workspace;
 
 /// Draw the whole application: the active screen, then any toast on top.
 pub fn render(frame: &mut Frame, app: &mut App) {
@@ -46,8 +50,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     match &mut app.screen {
         Screen::Home(h) => render_home(frame, area, h),
         Screen::NewSession(n) => render_new_session(frame, area, n),
-        Screen::Session(s) => render_session(frame, area, s),
-        Screen::Canvas(c) => render_canvas(frame, area, c),
+        Screen::Workspace(ws) => render_workspace(frame, area, ws),
     }
 
     if let Some(toast) = &app.toast {

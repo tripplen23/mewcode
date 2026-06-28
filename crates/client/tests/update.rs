@@ -10,7 +10,7 @@ use uuid::Uuid;
 use mewcode_client::net::{Session, SessionSummary};
 use mewcode_client::runtime::model::{
     App, Cmd, HomeState, Msg, NewSessionField, NewSessionState, Overlay, Screen, SessionState,
-    StreamMsg,
+    StreamMsg, WorkspaceState,
 };
 use mewcode_client::runtime::update;
 use mewcode_protocol::{MessagePart, Mode, ModelId, Role};
@@ -66,7 +66,7 @@ fn home_with(n: usize) -> App {
 /// Build an app sitting on a Session screen.
 fn on_session() -> App {
     let mut app = test_app();
-    app.screen = Screen::Session(SessionState::new(session()));
+    app.screen = Screen::Workspace(WorkspaceState::with_session(SessionState::new(session())));
     app
 }
 
@@ -79,7 +79,7 @@ fn home(app: &App) -> &HomeState {
 
 fn sess(app: &App) -> &SessionState {
     match &app.screen {
-        Screen::Session(s) => s,
+        Screen::Workspace(ws) => ws.chat.as_ref().unwrap(),
         other => panic!("expected Session, got {other:?}"),
     }
 }
