@@ -1,28 +1,21 @@
-//! Compact one-line "card" for a tool invocation in the chat transcript.
+//! A compact one-line card for a tool invocation in the chat transcript.
 //!
-//! Replaces the previous raw `→ name({input})` rendering (which dumped the
-//! full JSON inline and used the same Magenta for everything). The card
-//! shows the tool name, a one-line summary of the arguments, and a one-line
-//! preview of the result. Long values are truncated with `…`.
+//! Each card reveals three things at a glance: the **tool name**, a concise
+//! one-line summary of its **arguments**, and a terse preview of the **result**.
+//! Overlong values are elided gracefully with `…`.
 //!
-//! Colors are hardcoded for now. P14.3 will introduce a [`Theme`] so card
-//! colors (and every other color in the app) read from a single source.
+//! ## Future directions
 //!
-//! [`Theme`]: crate::runtime::view::theme
-//!
-//! Ceiling: no expand/collapse toggle, no syntax-highlighted result body,
-//! no streaming tool cards (only committed `MessagePart` variants). Those
-//! are follow-ups once the basic shape is in.
+//! Expand/collapse toggles, syntax-highlighted result bodies, and streaming
+//! tool cards are natural next steps once the current shape is settled.
 //!
 //! ## Visibility
 //!
-//! The three `render_*` functions and the two helper functions are all
-//! `pub` (not `pub(super)` or private) so that integration tests in
-//! `crates/client/tests/tool_card.rs` can drive them through the public
-//! surface — see `CONTRIBUTING.md` §"Tests". The two helpers are marked
-//! `#[doc(hidden)]` because they are test scaffolding, not part of the
-//! view API that downstream consumers (i.e. the rest of the app) should
-//! rely on; they may change shape without a major-version bump.
+//! The three `render_*` functions and two helpers are `pub` so that integration
+//! tests in `crates/client/tests/tool_card.rs` can drive them through the public
+//! API (see `CONTRIBUTING.md` §"Tests"). The helpers are `#[doc(hidden)]` —
+//! they are test scaffolding, not part of the stable view API, and their shape
+//! may shift without a major-version bump.
 
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -33,12 +26,12 @@ const MAX_ARGS_CHARS: usize = 60;
 const MAX_RESULT_LINES: usize = 2;
 const MAX_RESULT_LINE_CHARS: usize = 80;
 
-/// Render a `▸` header line for a tool call. The full arguments are
+/// Render a `🛠️ ` header line for a tool call. The full arguments are
 /// inlined as a one-line summary; long values are truncated with `…`.
 pub fn render_tool_call_header(call: &ToolCall) -> Line<'static> {
     let args = truncate_one_line(&summarise_json(&call.input), MAX_ARGS_CHARS);
     Line::from(vec![
-        Span::styled("▸ ", Style::default().fg(Color::Cyan)),
+        Span::styled("🛠️ ", Style::default().fg(Color::Cyan)),
         Span::styled(
             format!("{}({args})", call.name),
             Style::default()

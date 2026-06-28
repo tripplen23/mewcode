@@ -1,4 +1,4 @@
-//! Tool card renderers: the compact one-line `▸ name(args)` and `⎿` body
+//! Tool card renderers: the compact one-line `🛠️ name(args)` and `⎿` body
 //! lines drawn for `MessagePart::ToolCall` / `MessagePart::ToolResult` in
 //! the chat transcript.
 //!
@@ -49,7 +49,7 @@ fn header_renders_name_and_args_summary() {
     let text = line_text(&line);
     assert!(text.contains("readFile"), "missing name: {text:?}");
     assert!(text.contains("src/lib.rs"), "missing arg: {text:?}");
-    assert!(text.starts_with("▸ "), "missing glyph: {text:?}");
+    assert!(text.starts_with("🛠️ "), "missing glyph: {text:?}");
 }
 
 #[test]
@@ -224,7 +224,7 @@ fn paired_tool_call_and_result_render_one_card() {
         ModelId::default().as_str(),
     );
     let buf = draw_session(vec![msg]);
-    assert!(buf.contains("▸ bash"), "expected tool call header: {buf:?}");
+    assert!(buf.contains("🛠️ bash"), "expected tool call header: {buf:?}");
     assert!(
         buf.contains("⎿ file.txt"),
         "expected result body preview: {buf:?}"
@@ -284,7 +284,7 @@ fn tool_result_after_text_is_standalone() {
         ModelId::default().as_str(),
     );
     let buf = draw_session(vec![msg]);
-    assert!(buf.contains("▸ bash"), "expected call header: {buf:?}");
+    assert!(buf.contains("🛠️ bash"), "expected call header: {buf:?}");
     assert!(
         buf.contains("between"),
         "expected interleaved text: {buf:?}"
