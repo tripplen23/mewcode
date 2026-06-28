@@ -10,6 +10,9 @@ use super::super::model::{Overlay, SessionState};
 use super::markdown::render_markdown;
 use super::overlay::{render_overlay, skills_lines, tools_lines};
 use super::spinner::spinner_frame;
+use super::tool_card::{
+    render_tool_call_header, render_tool_result_body, render_tool_result_header,
+};
 
 /// Session: scrollable transcript, input bar, status bar, plus overlays.
 pub(super) fn render_session(frame: &mut Frame, area: Rect, s: &mut SessionState) {
@@ -100,21 +103,38 @@ fn render_message(msg: &mewcode_protocol::Message) -> Vec<Line<'static>> {
         label_style.add_modifier(Modifier::BOLD),
     ))];
 
+    // Tracks the id of the most recent `ToolCall` part seen, when no
+    // non-tool part has intervened. The matching `ToolResult` is the
+    // body's continuation of that call's card; a `ToolResult` whose
+    // call_id does not match (or that follows a different part) is
+    // rendered as a standalone `←` header.
+    let mut last_tool_call_id: Option<&str> = None;
+
     for part in &msg.parts {
         match part {
-            MessagePart::Text { text } => out.extend(render_markdown(text)),
-            MessagePart::ToolCall(call) => out.push(Line::from(Span::styled(
-                format!("→ {}({})", call.name, call.input),
-                Style::default().fg(Color::Magenta),
-            ))),
-            MessagePart::ToolResult(res) => out.push(Line::from(Span::styled(
-                format!("← {} result", res.name),
-                Style::default().fg(Color::Magenta),
-            ))),
-            MessagePart::FileMention { path } => out.push(Line::from(Span::styled(
-                format!("@{path}"),
-                Style::default().fg(Color::Blue),
-            ))),
+            MessagePart::Text { text } => {
+                last_tool_call_id = None;
+                out.extend(render_markdown(text));
+            }
+            MessagePart::ToolCall(call) => {
+                last_tool_call_id = Some(&call.id);
+                out.push(render_tool_call_header(call));
+            }
+            MessagePart::ToolResult(res) => {
+                let paired = last_tool_call_id == Some(&res.call_id);
+                last_tool_call_id = None;
+                if !paired {
+                    out.push(render_tool_result_header(res));
+                }
+                out.extend(render_tool_result_body(res));
+            }
+            MessagePart::FileMention { path } => {
+                last_tool_call_id = None;
+                out.push(Line::from(Span::styled(
+                    format!("@{path}"),
+                    Style::default().fg(Color::Blue),
+                )));
+            }
         }
     }
     out

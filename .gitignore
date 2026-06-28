@@ -39,3 +39,13 @@ Thumbs.db
 .kiro/
 PROMPT.md
 .env
+
+# Runtime data the engine produces (canvas files, session snapshots).
+# Keep this out of git: regenerable, contains user content.
+.mewcode/
+
+# Proptest regression files (seeds for failing cases). Keep out of git;
+# CI regenerates them when a property test fails, and committing them
+# pollutes diffs with machine-specific test output.
+*.proptest-regressions
+**/*.proptest-regressions
