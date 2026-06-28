@@ -224,7 +224,10 @@ fn paired_tool_call_and_result_render_one_card() {
         ModelId::default().as_str(),
     );
     let buf = draw_session(vec![msg]);
-    assert!(buf.contains("🛠️ bash"), "expected tool call header: {buf:?}");
+    assert!(
+        buf.contains("🛠️ bash"),
+        "expected tool call header: {buf:?}"
+    );
     assert!(
         buf.contains("⎿ file.txt"),
         "expected result body preview: {buf:?}"
