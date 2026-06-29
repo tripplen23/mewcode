@@ -25,6 +25,8 @@ use mewcode_protocol::{ToolCall, ToolResult};
 const MAX_ARGS_CHARS: usize = 60;
 const MAX_RESULT_LINES: usize = 2;
 const MAX_RESULT_LINE_CHARS: usize = 80;
+const SUMMARISED_VALUE_MAX_CHARS: usize = 24;
+const ELLIPSIS: &str = "…";
 
 /// Render a `🛠️ ` header line for a tool call. The full arguments are
 /// inlined as a one-line summary; long values are truncated with `…`.
@@ -59,7 +61,7 @@ pub fn render_tool_result_body(res: &ToolResult) -> Vec<Line<'static>> {
     let mut out: Vec<Line<'static>> = Vec::new();
     for (i, line) in lines.into_iter().take(MAX_RESULT_LINES).enumerate() {
         let raw = if truncated && i == MAX_RESULT_LINES - 1 {
-            format!("{line}…")
+            format!("{line}{ELLIPSIS}")
         } else {
             line.to_string()
         };
@@ -115,8 +117,8 @@ pub fn summarise_json(v: &serde_json::Value) -> String {
                     let vs = summarise_json(v);
                     if vs.is_empty() {
                         k.to_string()
-                    } else if vs.len() > 24 {
-                        format!("{k}: …")
+                    } else if vs.len() > SUMMARISED_VALUE_MAX_CHARS {
+                        format!("{k}: {ELLIPSIS}")
                     } else {
                         format!("{k}: {vs}")
                     }
@@ -139,7 +141,7 @@ pub fn summarise_json(v: &serde_json::Value) -> String {
 #[doc(hidden)]
 pub fn truncate_one_line(s: &str, max_chars: usize) -> String {
     if max_chars == 0 {
-        return "…".to_string();
+        return ELLIPSIS.to_string();
     }
     let mut lines = s.lines();
     let first = lines.next().unwrap_or("");
@@ -149,6 +151,6 @@ pub fn truncate_one_line(s: &str, max_chars: usize) -> String {
         first.to_string()
     } else {
         let cut: String = first.chars().take(cap_minus_marker).collect();
-        format!("{cut}…")
+        format!("{cut}{ELLIPSIS}")
     }
 }
