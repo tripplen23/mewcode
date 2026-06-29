@@ -1,6 +1,6 @@
-//! Tool card renderers: the compact one-line `🛠️ name(args)` and `⎿` body
-//! lines drawn for `MessagePart::ToolCall` / `MessagePart::ToolResult` in
-//! the chat transcript.
+//! Tool card renderers: the compact one-line header (per-tool marker +
+//! `name(args)`) and `⎿` body lines drawn for `MessagePart::ToolCall` /
+//! `MessagePart::ToolResult` in the chat transcript.
 //!
 //! These tests live in `tests/` (not in a `#[cfg(test)] mod tests` block
 //! inside `view/tool_card.rs`) per `CONTRIBUTING.md` §"Tests". The renderers
@@ -45,11 +45,11 @@ fn line_text(line: &ratatui::text::Line) -> String {
 
 #[test]
 fn header_renders_name_and_args_summary() {
-    let line = render_tool_call_header(&call("readFile", json!({"path": "src/lib.rs"})));
+    let line = render_tool_call_header(&call("read_file", json!({"path": "src/lib.rs"})));
     let text = line_text(&line);
-    assert!(text.contains("readFile"), "missing name: {text:?}");
+    assert!(text.contains("read_file"), "missing name: {text:?}");
     assert!(text.contains("src/lib.rs"), "missing arg: {text:?}");
-    assert!(text.starts_with("🛠️ "), "missing glyph: {text:?}");
+    assert!(text.starts_with("▸ "), "missing glyph: {text:?}");
 }
 
 #[test]
@@ -282,10 +282,7 @@ fn paired_tool_call_and_result_render_one_card() {
         ModelId::default().as_str(),
     );
     let buf = draw_session(vec![msg]);
-    assert!(
-        buf.contains("🛠️ bash"),
-        "expected tool call header: {buf:?}"
-    );
+    assert!(buf.contains("▶ bash"), "expected tool call header: {buf:?}");
     assert!(
         buf.contains("⎿ file.txt"),
         "expected result body preview: {buf:?}"
@@ -345,7 +342,7 @@ fn tool_result_after_text_is_standalone() {
         ModelId::default().as_str(),
     );
     let buf = draw_session(vec![msg]);
-    assert!(buf.contains("🛠️ bash"), "expected call header: {buf:?}");
+    assert!(buf.contains("▶ bash"), "expected call header: {buf:?}");
     assert!(
         buf.contains("between"),
         "expected interleaved text: {buf:?}"
@@ -355,4 +352,62 @@ fn tool_result_after_text_is_standalone() {
         "result after text must be standalone: {buf:?}"
     );
     assert!(buf.contains("⎿ late"), "expected body: {buf:?}");
+}
+
+// --- per-tool header marker (P14.4) ---------------------------------------
+//
+// Every tool in `ToolName::ALL` maps to a distinct header marker so a
+// transcript with multiple tool lines is scannable at a glance. The map
+// is in `view/tool_card.rs::marker_for`; these tests pin each entry so
+// a refactor that quietly drops a tool is caught.
+
+#[test]
+fn header_marker_per_known_tool() {
+    use mewcode_protocol::tool::ToolName;
+    let cases: &[(&str, &str)] = &[
+        ("read_file", "▸"),
+        ("list_directory", "▸"),
+        ("glob", "▸"),
+        ("grep", "◎"),
+        ("write_file", "✎"),
+        ("edit_file", "✎"),
+        ("bash", "▶"),
+        ("mewcode_memory", "◈"),
+    ];
+    for (name, expected) in cases {
+        // Sanity: the name must be in ToolName::ALL (would panic at
+        // startup in production; this turns a panic into a clean test
+        // failure if the protocol enum ever drifts).
+        assert!(
+            ToolName::parse(name).is_some(),
+            "test fixture references unknown tool name: {name:?}"
+        );
+        let text = line_text(&render_tool_call_header(&call(name, json!({}))));
+        assert!(
+            text.starts_with(&format!("{expected} ")),
+            "{name}: expected marker {expected:?}, got: {text:?}"
+        );
+    }
+}
+
+#[test]
+fn header_marker_falls_back_for_unknown_tool() {
+    let text = line_text(&render_tool_call_header(&call("future_tool", json!({}))));
+    assert!(
+        text.starts_with("▸ "),
+        "expected fallback marker, got: {text:?}"
+    );
+}
+
+#[test]
+fn header_marker_for_skill_tools() {
+    // Skill tools aren't in `ToolName::ALL` (they're registered in
+    // `engine`, not `protocol`), so they take the string-match branch.
+    for name in ["skills_list", "skill_view"] {
+        let text = line_text(&render_tool_call_header(&call(name, json!({}))));
+        assert!(
+            text.starts_with("◆ "),
+            "{name}: expected skill marker, got: {text:?}"
+        );
+    }
 }

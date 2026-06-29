@@ -18,6 +18,7 @@
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
+use mewcode_protocol::tool::{ToolName, names as tool_names};
 use mewcode_protocol::{ToolCall, ToolResult};
 
 const MAX_ARGS_CHARS: usize = 60;
@@ -25,13 +26,48 @@ const MAX_RESULT_LINES: usize = 2;
 const MAX_RESULT_LINE_CHARS: usize = 80;
 const SUMMARISED_VALUE_MAX_CHARS: usize = 24;
 const ELLIPSIS: &str = "…";
+const FALLBACK_MARKER: &str = "▸";
 
-/// Render a `🛠️ ` header line for a tool call. The full arguments are
-/// inlined as a one-line summary; long values are truncated with `…`.
+/// Pick the header marker for a tool call, dispatched on the canonical
+/// `ToolName` enum (with a string fallback for the two skill tools, which
+/// are registered in `engine` rather than `protocol`). Unknown names get
+/// `FALLBACK_MARKER`.
+fn marker_for(name: &str) -> &'static str {
+    if let Some(tool) = ToolName::parse(name) {
+        // Use the `names::*` constants for the comparisons so a rename in
+        // `protocol` propagates here as a compile error. `match` on the
+        // inner `&str` field can't be exhaustive (Rust requires a wildcard
+        // for `&str` matches), so dispatch via equality on the constants.
+        let n = tool.0;
+        if n == tool_names::READ_FILE || n == tool_names::LIST_DIRECTORY || n == tool_names::GLOB {
+            "▸"
+        } else if n == tool_names::GREP {
+            "◎"
+        } else if n == tool_names::WRITE_FILE || n == tool_names::EDIT_FILE {
+            "✎"
+        } else if n == tool_names::BASH {
+            "▶"
+        } else if n == tool_names::MEMORY {
+            "◈"
+        } else {
+            FALLBACK_MARKER
+        }
+    } else {
+        match name {
+            "skills_list" | "skill_view" => "◆",
+            _ => FALLBACK_MARKER,
+        }
+    }
+}
+
+/// Render a per-tool-marker header line for a tool call. The full
+/// arguments are inlined as a one-line summary; long values are
+/// truncated with `…`.
 pub fn render_tool_call_header(call: &ToolCall) -> Line<'static> {
+    let marker = marker_for(&call.name);
     let args = truncate_one_line(&summarise_json(&call.input), MAX_ARGS_CHARS);
     Line::from(vec![
-        Span::styled("🛠️ ", Style::default().fg(Color::Cyan)),
+        Span::styled(format!("{marker} "), Style::default().fg(Color::Cyan)),
         Span::styled(
             format!("{}({args})", call.name),
             Style::default()
