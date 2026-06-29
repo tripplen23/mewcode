@@ -103,11 +103,7 @@ fn render_message(msg: &mewcode_protocol::Message) -> Vec<Line<'static>> {
         label_style.add_modifier(Modifier::BOLD),
     ))];
 
-    // Tracks the id of the most recent `ToolCall` part seen, when no
-    // non-tool part has intervened. The matching `ToolResult` is the
-    // body's continuation of that call's card; a `ToolResult` whose
-    // call_id does not match (or that follows a different part) is
-    // rendered as a standalone `←` header.
+    // Tracks the id of the most recent `ToolCall` part seen.
     let mut last_tool_call_id: Option<&str> = None;
 
     for part in &msg.parts {

@@ -12,10 +12,8 @@
 //! ## Visibility
 //!
 //! The three `render_*` functions and two helpers are `pub` so that integration
-//! tests in `crates/client/tests/tool_card.rs` can drive them through the public
-//! API (see `CONTRIBUTING.md` §"Tests"). The helpers are `#[doc(hidden)]` —
-//! they are test scaffolding, not part of the stable view API, and their shape
-//! may shift without a major-version bump.
+//! tests in `crates/client/tests/tool_card.rs` can drive them through the public.
+//! The helpers are `#[doc(hidden)]`.
 
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -75,9 +73,7 @@ pub fn render_tool_result_body(res: &ToolResult) -> Vec<Line<'static>> {
     out
 }
 
-/// Render a `←` header for a standalone `ToolResult` (used when the result
-/// appears without its `ToolCall`, e.g. tool messages injected from the
-/// model rather than the assistant).
+/// Render a `▸` header for a standalone `ToolResult`.
 pub fn render_tool_result_header(res: &ToolResult) -> Line<'static> {
     let color = if res.is_error {
         Color::Red
@@ -86,7 +82,7 @@ pub fn render_tool_result_header(res: &ToolResult) -> Line<'static> {
     };
     Line::from(Span::styled(
         format!(
-            "← {} {}",
+            "▸ {} {}",
             res.name,
             if res.is_error { "error" } else { "ok" }
         ),
@@ -95,11 +91,8 @@ pub fn render_tool_result_header(res: &ToolResult) -> Line<'static> {
 }
 
 /// Compact one-line summary of a JSON value: stringify scalars directly,
-/// objects show `"{k: v, k2: v2}"`, arrays show `"[n items]"`, `null` is
-/// the empty string.
-///
-/// Test surface only — `#[doc(hidden)]` because the shape is an internal
-/// detail of how the card fits on one line and may change without notice.
+/// objects show `"{k: v, k2: v2}"`, arrays show `"[n items]"`,
+/// `null` is the empty string.
 #[doc(hidden)]
 pub fn summarise_json(v: &serde_json::Value) -> String {
     match v {
@@ -135,9 +128,6 @@ pub fn summarise_json(v: &serde_json::Value) -> String {
 /// replaced by `…` (a single-character ellipsis), keeping the total
 /// width at the configured cap. With `max_chars == 0`, the result is
 /// always `…` (one char), since the caller's cap is zero.
-///
-/// Test surface only — `#[doc(hidden)]` because the truncation policy is
-/// a render detail, not a stable API.
 #[doc(hidden)]
 pub fn truncate_one_line(s: &str, max_chars: usize) -> String {
     if max_chars == 0 {

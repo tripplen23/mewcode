@@ -239,7 +239,7 @@ fn truncate_one_line_single_line_passthrough_stays_clean() {
 
 // --- pairing regression tests ---------------------------------------------
 //
-// `render_message` must not emit a redundant `← name ok/error` header when a
+// `render_message` must not emit a redundant `▸ name ok/error` header when a
 // `ToolResult` immediately follows its `ToolCall` in the same message. The
 // committed assistant message produced by `commit_assistant_message` (in
 // `update/stream.rs`) is always `ToolCall(call) → ToolResult(result)` with
@@ -291,16 +291,16 @@ fn paired_tool_call_and_result_render_one_card() {
         "expected result body preview: {buf:?}"
     );
     assert!(
-        !buf.contains("← bash"),
-        "paired result must not emit a redundant `←` header: {buf:?}"
+        !buf.contains("▸ bash"),
+        "paired result must not emit a redundant `▸` header: {buf:?}"
     );
 }
 
 #[test]
 fn standalone_tool_result_keeps_the_arrow_header() {
     // A result whose call_id doesn't match the preceding call (or where there
-    // is no preceding call at all) still gets the standalone `← name ok` /
-    // `← name error` header. This keeps the rare case where a tool result
+    // is no preceding call at all) still gets the standalone `▸ name ok` /
+    // `▸ name error` header. This keeps the rare case where a tool result
     // surfaces without its call (e.g. a replayed transcript) readable.
     let msg = Message::assistant(
         vec![MessagePart::ToolResult(ToolResult {
@@ -313,7 +313,7 @@ fn standalone_tool_result_keeps_the_arrow_header() {
     );
     let buf = draw_session(vec![msg]);
     assert!(
-        buf.contains("← bash"),
+        buf.contains("▸ bash"),
         "expected standalone header: {buf:?}"
     );
     assert!(buf.contains("⎿ late result"), "expected body: {buf:?}");
@@ -351,7 +351,7 @@ fn tool_result_after_text_is_standalone() {
         "expected interleaved text: {buf:?}"
     );
     assert!(
-        buf.contains("← bash"),
+        buf.contains("▸ bash"),
         "result after text must be standalone: {buf:?}"
     );
     assert!(buf.contains("⎿ late"), "expected body: {buf:?}");
