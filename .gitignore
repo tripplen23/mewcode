@@ -44,8 +44,6 @@ PROMPT.md
 # Keep this out of git: regenerable, contains user content.
 .mewcode/
 
-# Proptest regression files (seeds for failing cases). Keep out of git;
-# CI regenerates them when a property test fails, and committing them
-# pollutes diffs with machine-specific test output.
+# Proptest regression seeds — regenerable, pollutes diffs if committed.
 *.proptest-regressions
 **/*.proptest-regressions
