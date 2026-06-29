@@ -54,9 +54,16 @@ pub fn render_tool_result_body(res: &ToolResult) -> Vec<Line<'static>> {
     } else {
         Color::DarkGray
     };
+    let lines: Vec<_> = summary.lines().collect();
+    let truncated = lines.len() > MAX_RESULT_LINES;
     let mut out: Vec<Line<'static>> = Vec::new();
-    for (i, line) in summary.lines().take(MAX_RESULT_LINES).enumerate() {
-        let text = truncate_one_line(line, MAX_RESULT_LINE_CHARS);
+    for (i, line) in lines.into_iter().take(MAX_RESULT_LINES).enumerate() {
+        let raw = if truncated && i == MAX_RESULT_LINES - 1 {
+            format!("{line}…")
+        } else {
+            line.to_string()
+        };
+        let text = truncate_one_line(&raw, MAX_RESULT_LINE_CHARS);
         let prefix = if i == 0 { prefix } else { "  " };
         out.push(Line::from(Span::styled(
             format!("{prefix}{text}"),
@@ -134,9 +141,11 @@ pub fn truncate_one_line(s: &str, max_chars: usize) -> String {
     if max_chars == 0 {
         return "…".to_string();
     }
-    let first = s.lines().next().unwrap_or("");
+    let mut lines = s.lines();
+    let first = lines.next().unwrap_or("");
+    let had_more = lines.next().is_some();
     let cap_minus_marker = max_chars - 1;
-    if first.chars().count() <= max_chars {
+    if !had_more && first.chars().count() <= max_chars {
         first.to_string()
     } else {
         let cut: String = first.chars().take(cap_minus_marker).collect();

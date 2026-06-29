@@ -104,6 +104,40 @@ fn result_body_is_empty_for_null() {
 }
 
 #[test]
+fn result_body_signals_omitted_lines() {
+    // A 3+ line result renders only the first MAX_RESULT_LINES (2)
+    // lines. The last visible line must carry `…` so the user knows
+    // more output existed beyond the preview, instead of mistaking the
+    // truncation for a complete two-line result.
+    let body = render_tool_result_body(&result(
+        "bash",
+        json!("line 1\nline 2\nline 3\nline 4"),
+        false,
+    ));
+    assert_eq!(body.len(), 2, "expected exactly 2 visible lines: {body:?}");
+    let last = line_text(&body[1]);
+    assert!(
+        last.ends_with('…'),
+        "last visible line must mark omitted output: {last:?}"
+    );
+}
+
+#[test]
+fn result_body_two_lines_keeps_no_ellipsis() {
+    // The `…` signal only fires when more lines were dropped. A result
+    // that fits within MAX_RESULT_LINES must render cleanly.
+    let body = render_tool_result_body(&result("bash", json!("line 1\nline 2"), false));
+    assert_eq!(body.len(), 2);
+    for (i, line) in body.iter().enumerate() {
+        let text = line_text(line);
+        assert!(
+            !text.ends_with('…'),
+            "line {i} should not have ellipsis when no lines were dropped: {text:?}"
+        );
+    }
+}
+
+#[test]
 fn result_header_marks_error() {
     let line = render_tool_result_header(&result("bash", json!("nope"), true));
     let text = line_text(&line);
@@ -177,6 +211,32 @@ fn truncate_one_line_zero_cap_returns_single_ellipsis() {
 fn truncate_one_line_passthrough_when_short() {
     assert_eq!(truncate_one_line("hello", 10), "hello");
     assert_eq!(truncate_one_line("", 10), "");
+}
+
+#[test]
+fn truncate_one_line_signals_embedded_newline_cut() {
+    // When the input has more than one line but the first line fits
+    // within the cap, the function must still mark the cut with `…`
+    // so the caller knows the visible prefix came from a multiline
+    // string. Without this signal, a 5-line argument whose first line
+    // is short would render as if it were a complete single-line
+    // value.
+    let s = "short\nsecond line is much longer than the cap";
+    let out = truncate_one_line(s, 30);
+    assert!(
+        out.ends_with('…'),
+        "expected ellipsis for multiline cut: {out:?}"
+    );
+}
+
+#[test]
+fn truncate_one_line_single_line_passthrough_stays_clean() {
+    // Single-line input that fits must not get a spurious `…` — the
+    // embedded-newline signal should only fire when there really is
+    // a next line.
+    let out = truncate_one_line("hello", 30);
+    assert_eq!(out, "hello");
+    assert!(!out.ends_with('…'));
 }
 
 // --- pairing regression tests ---------------------------------------------
