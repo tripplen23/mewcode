@@ -71,6 +71,8 @@ pub struct Theme {
     pub toast_info: Color,          // was: Blue
     pub toast_error: Color,         // was: Red
     pub toast_neutral: Color,       // was: DarkGray
+    pub popover_highlight: Color,   // popover row background when selected (PR 2)
+    pub disabled: Color,            // dimmed style for deferred commands (PR 2)
 }
 
 impl Default for Theme {
@@ -139,7 +141,8 @@ Document `/model` as "coming soon" in the popover with a dimmed
 visual treatment, so users know it exists.
 
 ### Files
-
+- Create: `crates/client/src/runtime/model/commands.rs`
+- Create: `crates/client/src/runtime/view/popover.rs`
 - Modify: `crates/client/src/runtime/model/states/session.rs`
   - Replace `input: TextArea<'static>` with `input: InputDraft` where
     `InputDraft` holds both the raw text and the parsed command
@@ -185,7 +188,8 @@ purely additive.
 - Above the input bar (between transcript and input chunks)
 - Width: 60% of the area (matches `Overlay`'s `centered_rect(60, 60)`)
 - Max 8 visible rows, scrollable if more
-- Highlighted row: `Color::Cyan` background
+- Highlighted row: `theme.popover_highlight` background (a `Theme`
+  field added in PR 1)
 - Footer: hint text (`Tab to fill · up/down to navigate · Esc to close`)
 
 ### Test surface
@@ -235,9 +239,11 @@ purely additive.
    instead of `Text` for the inserted mention.
 
 **File listing source:** New server route `GET /files?prefix=<p>` that
-returns `{ "files": [".mewcode/agent.md", "Cargo.toml", ...] }` relative
-to the project root. Capped at, say, 50 results, no recursion (user
-types more chars to narrow).
+returns `{ "files": ["src/", "Cargo.toml", ...] }` relative to the
+project root. Capped at, say, 50 results, no recursion (user types
+more chars to narrow). Directories are distinguished from files by a
+trailing `/` suffix (the standard Unix `ls -F` convention) — keeps
+the response shape compact and the client parsing trivial.
 
 **Pragmatic cut for this PR:**
 
@@ -283,12 +289,12 @@ types more chars to narrow).
 - `at_popover_opens_on_typing_at` — input is empty, user types `@`,
   draft has `at_popover_open == true`, and the popover renders a
   list of files (from a fixture).
-- `at_popover_inserts_filemension_on_select` — type `@sr`, `Down` to
+- `at_popover_inserts_file_mention_on_select` — type `@sr`, `Down` to
   highlight `src/`, `Enter`, draft.tokens == `[Text(""), FileMention("src/"), Text("")]`.
-- `submit_carries_filemension_part` — type `@sr`, select, submit,
+- `submit_carries_file_mention_part` — type `@sr`, select, submit,
   the resulting `Message` has a `MessagePart::FileMention` not
   `MessagePart::Text` for the path.
-- `filemension_renders_as_at_path_in_input_bar` — terminal output
+- `file_mention_renders_as_at_path_in_input_bar` — terminal output
   contains `@src/` in the input area with the mention style.
 
 ### Acceptance
@@ -349,7 +355,7 @@ Total: 4 new files, ~10 modified files, 16 new tests.
 
 ## Verification at the end of each PR
 
-```
+```bash
 cargo fmt --check
 cargo clippy -p mewcode-client --tests -- -D warnings
 cargo clippy -p mewcode-server --tests -- -D warnings
