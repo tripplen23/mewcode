@@ -128,13 +128,11 @@ fn result_body_two_lines_keeps_no_ellipsis() {
     // that fits within MAX_RESULT_LINES must render cleanly.
     let body = render_tool_result_body(&result("bash", json!("line 1\nline 2"), false));
     assert_eq!(body.len(), 2);
-    for (i, line) in body.iter().enumerate() {
-        let text = line_text(line);
-        assert!(
-            !text.ends_with('…'),
-            "line {i} should not have ellipsis when no lines were dropped: {text:?}"
-        );
-    }
+    let all: String = body.iter().map(line_text).collect();
+    assert!(
+        !all.contains('…'),
+        "no ellipsis when nothing was dropped: {all:?}"
+    );
 }
 
 #[test]

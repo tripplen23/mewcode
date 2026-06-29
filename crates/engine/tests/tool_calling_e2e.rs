@@ -62,7 +62,6 @@ async fn rig_tools_from_default_registry_is_non_empty() {
         tools.iter().any(|t| t.name() == "mewcode_memory"),
         "should include mewcode_memory"
     );
-    // _tmp_dir and _tmp_proj drop here and clean up.
 }
 
 #[tokio::test]
