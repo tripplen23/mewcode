@@ -169,9 +169,10 @@ for d in &descriptors {
 ## Project conventions
 
 - **No emoji in code, comments, or commits** unless explicitly asked. The
-  one current exception: `🛠️` is the chosen marker for the P14.2 tool card
-  header in `crates/client/src/runtime/view/tool_card.rs`, in tests that
-  assert on it, and in the commit that introduced it — see PR #30.
+  per-tool header markers in `crates/client/src/runtime/view/tool_card.rs`
+  (e.g. `▸`, `◎`, `✎`, `▶`, `◈`, `◆`) live in the Unicode "Geometric
+  Shapes" and "Miscellaneous Symbols" blocks, not in the emoji blocks —
+  see the P14.4 marker map for the current values.
 - **Don't add comments unless asked** (per the project AGENTS.md).
 - **Match existing style** when editing. If nearby code uses `///` doc comments, you use `///` doc comments. If nearby code doesn't, neither do you.
 - **Touch only what you must.** Refactors should be motivated by a concrete need, not by aesthetics.

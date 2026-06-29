@@ -18,7 +18,7 @@
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use mewcode_protocol::tool::{ToolName, names as tool_names};
+use mewcode_protocol::tool::ToolName;
 use mewcode_protocol::{ToolCall, ToolResult};
 
 const MAX_ARGS_CHARS: usize = 60;
@@ -34,23 +34,13 @@ const FALLBACK_MARKER: &str = "▸";
 /// `FALLBACK_MARKER`.
 fn marker_for(name: &str) -> &'static str {
     if let Some(tool) = ToolName::parse(name) {
-        // Use the `names::*` constants for the comparisons so a rename in
-        // `protocol` propagates here as a compile error. `match` on the
-        // inner `&str` field can't be exhaustive (Rust requires a wildcard
-        // for `&str` matches), so dispatch via equality on the constants.
-        let n = tool.0;
-        if n == tool_names::READ_FILE || n == tool_names::LIST_DIRECTORY || n == tool_names::GLOB {
-            "▸"
-        } else if n == tool_names::GREP {
-            "◎"
-        } else if n == tool_names::WRITE_FILE || n == tool_names::EDIT_FILE {
-            "✎"
-        } else if n == tool_names::BASH {
-            "▶"
-        } else if n == tool_names::MEMORY {
-            "◈"
-        } else {
-            FALLBACK_MARKER
+        match tool.0 {
+            "read_file" | "list_directory" | "glob" => "▸",
+            "grep" => "◎",
+            "write_file" | "edit_file" => "✎",
+            "bash" => "▶",
+            "mewcode_memory" => "◈",
+            _ => FALLBACK_MARKER,
         }
     } else {
         match name {
