@@ -78,8 +78,8 @@ Layout per crate:
 crates/<crate>/
 ├── src/<file>.rs          ← production code only
 └── tests/
-    ├── <area>_smoke.rs    ← fast, opt-in by default
-    └── <area>_tests.rs    ← per-area integration tests
+    ├── <area>.rs          ← per-area integration tests, one file per area
+    └── prop_<topic>.rs    ← property-based tests (proptest), one file per topic
 ```
 
 Rationale:
@@ -87,9 +87,46 @@ Rationale:
 - **One rule, easy to teach.** A single rule ("tests live under `tests/`") is easier to remember and to enforce than a sliding scale ("small tests inline, large tests external").
 - **Source files stay focused.** No test scaffolding interleaved with the production code. The test/code ratio of a source file tells you nothing about its design.
 - **External tests exercise the public API.** That catches accidental breakage of the contract a downstream consumer sees, which `#[cfg(test)] mod tests` inside the source file can't (it has private access).
-- **Black-box by default.** If a test genuinely needs a private item, that's a signal to make the item `pub(crate)` and write a doc comment explaining *why* it's exposed. Don't reach inside the module.
+- **Black-box by default.** If a test genuinely needs a private item, that's a signal to make the item `pub` (so an external test crate can reach it) and write a doc comment explaining *why* it's exposed. `pub(crate)` does **not** help here — files under `tests/` are a *separate* crate, not a submodule of the crate under test. Don't reach inside the module with `use super::*`; that's a code smell that usually means a `pub` item is missing.
 
 Adding a new test: create `crates/<crate>/tests/<area>.rs` and `use mewcode_<crate>::...` like any downstream user would. No `use super::*`.
+
+#### Worked example: a renderer and its tests
+
+Suppose `crates/client/src/runtime/view/foo.rs` defines a renderer. The tests for it go in `crates/client/tests/foo.rs`:
+
+```rust
+// crates/client/src/runtime/view/foo.rs
+//
+// `pub` (not `pub(super)`) so external tests can reach it. The two
+// helpers are test surface only — `#[doc(hidden)]` keeps them out of
+// `cargo doc` so downstream code doesn't depend on their exact shape.
+pub fn render_foo(input: &Input) -> Line<'static> { /* ... */ }
+
+#[doc(hidden)]
+pub fn foo_helper(s: &str) -> String { /* ... */ }
+```
+
+```rust
+// crates/client/src/runtime/view/mod.rs
+mod foo;
+
+pub use foo::{render_foo, foo_helper};  // re-export at the view root
+```
+
+```rust
+// crates/client/tests/foo.rs
+
+use mewcode_client::runtime::view::{render_foo, foo_helper};
+
+#[test]
+fn render_foo_handles_empty_input() {
+    let line = render_foo(&Input::default());
+    assert_eq!(line_text(&line), "…");
+}
+```
+
+The test file imports through the re-exports on `mewcode_client::runtime::view`, the same path a downstream crate would use. No `use super::*`, no private-module access, no `#[cfg(test)]` block in `foo.rs`.
 
 ### Magic strings
 
@@ -131,7 +168,10 @@ for d in &descriptors {
 
 ## Project conventions
 
-- **No emoji in code, comments, or commits** unless explicitly asked.
+- **No emoji in code, comments, or commits** unless explicitly asked. The
+  one current exception: `🛠️` is the chosen marker for the P14.2 tool card
+  header in `crates/client/src/runtime/view/tool_card.rs`, in tests that
+  assert on it, and in the commit that introduced it — see PR #30.
 - **Don't add comments unless asked** (per the project AGENTS.md).
 - **Match existing style** when editing. If nearby code uses `///` doc comments, you use `///` doc comments. If nearby code doesn't, neither do you.
 - **Touch only what you must.** Refactors should be motivated by a concrete need, not by aesthetics.

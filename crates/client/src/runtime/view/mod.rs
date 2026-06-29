@@ -28,10 +28,15 @@ mod overlay;
 mod session;
 mod spinner;
 mod toast;
+mod tool_card;
 
 pub use markdown::highlight_code_block;
 pub use spinner::spinner_frame;
 pub use toast::toast_alpha;
+pub use tool_card::{
+    render_tool_call_header, render_tool_result_body, render_tool_result_header, summarise_json,
+    truncate_one_line,
+};
 
 use home::render_home;
 use new_session::render_new_session;

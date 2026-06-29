@@ -39,3 +39,7 @@ Thumbs.db
 .kiro/
 PROMPT.md
 .env
+
+# Proptest regression seeds — regenerable, pollutes diffs if committed.
+*.proptest-regressions
+**/*.proptest-regressions
