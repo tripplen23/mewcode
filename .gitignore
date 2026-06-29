@@ -40,10 +40,6 @@ Thumbs.db
 PROMPT.md
 .env
 
-# Runtime data the engine produces (canvas files, session snapshots).
-# Keep this out of git: regenerable, contains user content.
-.mewcode/
-
 # Proptest regression seeds — regenerable, pollutes diffs if committed.
 *.proptest-regressions
 **/*.proptest-regressions
