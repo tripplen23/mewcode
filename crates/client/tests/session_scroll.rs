@@ -247,7 +247,7 @@ fn cursor_after_word_wrap_lands_on_new_visual_row() {
     for c in "hello world".chars() {
         press(&mut app, KeyCode::Char(c));
     }
-    for c in std::iter::repeat('x').take(40) {
+    for c in std::iter::repeat_n('x', 40) {
         press(&mut app, KeyCode::Char(c));
     }
 
