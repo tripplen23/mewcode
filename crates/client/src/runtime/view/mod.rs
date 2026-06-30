@@ -55,7 +55,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
 /// Park the terminal cursor inside the bordered box that hosts `textarea`.
 ///
-/// Needed because the TextAreas render as plain `Paragraph`s and so don't move 
+/// Needed because the TextAreas render as plain `Paragraph`s and so don't move
 /// the cursor themselves; without this the cursor
 /// stays at the end of the last write — the status bar — and the user's
 /// keystrokes appear to land in the wrong place.
