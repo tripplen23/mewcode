@@ -104,8 +104,6 @@ pub(super) fn on_session_submit(s: &mut SessionState, toast: &mut Option<Toast>)
     }
 
     let user_text = trimmed.to_string();
-    s.input = TextArea::default();
-
     let user_msg = Message::user(vec![MessagePart::Text {
         text: user_text.clone(),
     }]);
@@ -117,6 +115,8 @@ pub(super) fn on_session_submit(s: &mut SessionState, toast: &mut Option<Toast>)
         // `Uuid::nil()` here is intentional: the real id arrives with the SSE
         // `Started` event; we need a placeholder so the `StreamingState` is Some.
         s.streaming = Some(StreamingState::new(Uuid::nil()));
+        // Clear the composer now that the message is committed to history.
+        s.input = TextArea::default();
         Cmd::StartChat(ChatRequest {
             session_id: session.id,
             model: session.model,
@@ -124,11 +124,12 @@ pub(super) fn on_session_submit(s: &mut SessionState, toast: &mut Option<Toast>)
             messages: session.messages.clone(),
         })
     } else {
-        // No session yet — buffer the text, kick off a create. The
-        // `Msg::SessionCreated` handler will commit this as the first
-        // user message and start the chat.
+        // No session yet — buffer the text in the composer too so the user
+        // can retry on a create failure. The `Msg::SessionCreated` handler
+        // will clear it once the message is committed as the first turn.
         s.pending_chat = Some(user_text.clone());
         s.creating = true;
+        s.creation_started_at = Some(std::time::Instant::now());
         Cmd::CreateSession(CreateSessionRequest {
             title: derive_title(&user_text),
             model: None,

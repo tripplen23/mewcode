@@ -42,11 +42,8 @@ pub(super) fn render_session(frame: &mut Frame, area: Rect, s: &mut SessionState
         }
         None => {
             lines.push(Line::from(Span::styled(
-                if s.creating {
-                    format!(
-                        "{} starting session…",
-                        spinner_frame(std::time::Instant::now().elapsed())
-                    )
+                if let Some(started) = s.creation_started_at {
+                    format!("{} starting session…", spinner_frame(started.elapsed()))
                 } else {
                     "Type a message to start a new session.".to_string()
                 },

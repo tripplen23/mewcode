@@ -50,21 +50,20 @@ fn message_count(app: &App) -> usize {
     session_state(app)
         .session
         .as_ref()
-        .map(|s| s.messages.len())
-        .unwrap_or(0)
+        .expect("test fixture should have a hydrated session")
+        .messages
+        .len()
 }
 
 fn assistant_count(app: &App) -> usize {
     session_state(app)
         .session
         .as_ref()
-        .map(|s| {
-            s.messages
-                .iter()
-                .filter(|m| m.role == Role::Assistant)
-                .count()
-        })
-        .unwrap_or(0)
+        .expect("test fixture should have a hydrated session")
+        .messages
+        .iter()
+        .filter(|m| m.role == Role::Assistant)
+        .count()
 }
 
 /// A non-terminal streaming event (everything except `Finished`/`Failed`).

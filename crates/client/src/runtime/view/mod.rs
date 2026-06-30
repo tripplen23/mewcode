@@ -64,7 +64,8 @@ pub(super) fn park_cursor_in_field(frame: &mut Frame, chunk: Rect, textarea: &Te
     let inner_x = chunk.x.saturating_add(1);
     let inner_y = chunk.y.saturating_add(1);
     let max_x = chunk.x.saturating_add(chunk.width.saturating_sub(2));
+    let max_y = chunk.y.saturating_add(chunk.height.saturating_sub(2));
     let x = inner_x.saturating_add(cursor_col as u16).min(max_x);
-    let y = inner_y.saturating_add(cursor_row as u16);
+    let y = inner_y.saturating_add(cursor_row as u16).min(max_y);
     frame.set_cursor_position(Position::new(x, y));
 }

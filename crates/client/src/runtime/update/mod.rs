@@ -8,7 +8,7 @@
 //! > quiet and the function is trivially unit-testable.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use tui_textarea::{Input, Key};
+use tui_textarea::{Input, Key, TextArea};
 use uuid::Uuid;
 
 use mewcode_protocol::event::ChatRequest;
@@ -48,11 +48,15 @@ pub fn update(app: &mut App, msg: Msg) -> Cmd {
                 let pending = s.pending_chat.take();
                 s.session = Some(session.clone());
                 s.creating = false;
+                s.creation_started_at = None;
                 if let Some(text) = pending {
                     let user_msg = Message::user(vec![MessagePart::Text { text: text.clone() }]);
                     s.session.as_mut().unwrap().messages.push(user_msg);
                     s.follow = true;
                     s.streaming = Some(StreamingState::new(Uuid::nil()));
+                    // The composer is cleared now that the first turn
+                    // has been committed.
+                    s.input = TextArea::default();
                     // The local `session` is the pre-push server clone —
                     // read from the model, which has the user message.
                     let live = s.session.as_ref().unwrap();
@@ -65,10 +69,12 @@ pub fn update(app: &mut App, msg: Msg) -> Cmd {
                 }
                 Cmd::None
             }
-            // Create failed; surface the error. The typed text fed
-            // the title, so a retry would just re-issue the same request.
+            // Create failed; surface the error. The composer keeps the
+            // typed text so the user can retry; `pending_chat` is dropped
+            // so a retry rebuilds it from the still-present input.
             Err(CreateError::Other(message)) => {
                 s.creating = false;
+                s.creation_started_at = None;
                 s.pending_chat = None;
                 *toast = Some(Toast::error(message));
                 Cmd::None
@@ -77,6 +83,7 @@ pub fn update(app: &mut App, msg: Msg) -> Cmd {
                 // The title comes from the first message, so this arm
                 // is unreachable. Treat as a generic failure if it ever fires.
                 s.creating = false;
+                s.creation_started_at = None;
                 s.pending_chat = None;
                 *toast = Some(Toast::error("could not create session: empty title"));
                 Cmd::None

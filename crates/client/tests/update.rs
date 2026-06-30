@@ -89,7 +89,9 @@ fn empty_session_first_message_kicks_off_create() {
     );
     assert!(s.creating);
     assert_eq!(s.pending_chat.as_deref(), Some("hello world"));
-    assert_eq!(s.input.lines().join("\n"), "", "input cleared");
+    // The composer keeps the text so the user can retry if the create
+    // fails. It is cleared in the `SessionCreated(Ok)` success path.
+    assert_eq!(s.input.lines().join("\n"), "hello world");
 }
 
 #[test]
@@ -115,9 +117,10 @@ fn long_first_message_is_truncated_to_max_title() {
     }
     match update(&mut app, key(KeyCode::Enter)) {
         Cmd::CreateSession(req) => {
-            assert!(
-                req.title.chars().count() <= 60,
-                "title should be capped at 60 chars, got {}",
+            assert_eq!(
+                req.title.chars().count(),
+                60,
+                "title should be exactly 60 chars (the cap), got {}",
                 req.title.chars().count()
             );
         }
@@ -193,6 +196,32 @@ fn session_created_failure_drops_creating_and_toasts() {
     assert!(app.toast.is_some());
 }
 
+/// Regression for the data-loss path: when `POST /sessions` fails, the
+/// user's typed text must stay in the composer so they can retry. The
+/// previous flow cleared `s.input` on submit and then dropped
+/// `pending_chat` on failure, leaving the user staring at an empty box.
+#[test]
+fn session_created_failure_preserves_input_for_retry() {
+    let mut app = on_empty_session();
+    for c in "retry me".chars() {
+        press(&mut app, KeyCode::Char(c));
+    }
+    update(&mut app, key(KeyCode::Enter));
+
+    update(
+        &mut app,
+        Msg::SessionCreated(Err(mewcode_client::runtime::model::CreateError::Other(
+            "boom".into(),
+        ))),
+    );
+
+    let s = sess(&app);
+    assert!(s.session.is_none());
+    assert!(!s.creating);
+    assert_eq!(s.input.lines().join("\n"), "retry me");
+    assert!(s.creation_started_at.is_none(), "spinner should stop");
+}
+
 #[test]
 fn creating_state_ignores_keypresses() {
     let mut app = on_empty_session();
@@ -200,14 +229,18 @@ fn creating_state_ignores_keypresses() {
         press(&mut app, KeyCode::Char(c));
     }
     update(&mut app, key(KeyCode::Enter));
-    let before = sess(&app).pending_chat.clone();
+    let before_pending = sess(&app).pending_chat.clone();
+    let before_input = sess(&app).input.lines().join("\n");
 
-    // All keypresses while creating should be ignored.
+    // All keypresses while creating should be ignored — pending_chat,
+    // input, and the creating flag itself stay put.
     for c in "xyz".chars() {
         press(&mut app, KeyCode::Char(c));
     }
-    assert_eq!(sess(&app).pending_chat, before);
-    assert!(sess(&app).creating);
+    let s = sess(&app);
+    assert_eq!(s.pending_chat, before_pending);
+    assert_eq!(s.input.lines().join("\n"), before_input);
+    assert!(s.creating);
 }
 
 // --- existing-session flow ------------------------------------------------

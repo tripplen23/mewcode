@@ -36,6 +36,10 @@ pub struct SessionState {
     pub pending_chat: Option<String>,
     /// `true` while a `POST /sessions` is in flight for `pending_chat`.
     pub creating: bool,
+    /// When `creating` was set true; used by the view to drive the
+    /// "starting session…" spinner. `None` while not creating so a stale
+    /// instant is never shown.
+    pub creation_started_at: Option<Instant>,
     /// Vertical scroll offset of the transcript, in wrapped lines from the top.
     pub scroll: u16,
     /// When `true`, the transcript stays pinned to its latest line.
@@ -62,6 +66,7 @@ impl SessionState {
             input: TextArea::default(),
             pending_chat: None,
             creating: false,
+            creation_started_at: None,
             scroll: 0,
             follow: true,
             max_scroll: 0,
