@@ -37,7 +37,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use crossterm::event::{
-    self, Event, KeyCode, KeyEventKind, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
+    self, Event, KeyEventKind, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
     PushKeyboardEnhancementFlags,
 };
 use crossterm::execute;
@@ -153,27 +153,22 @@ pub async fn run(config: ClientConfig) -> Result<()> {
 }
 
 /// Spawn the blocking input reader: it polls crossterm for events and forwards
-/// each key as a [`Msg::Key`]. Forwards `Press`, `Repeat`, and `Release(space)`;
-/// drops every other `Release` so a held key doesn't insert twice on key-up.
-/// The `space`-release carve-out is a workaround for xterm.js builds that tag
-/// the first space key-down as `Release` when the Kitty keyboard protocol
-/// isn't negotiated — without it the leading space between two words vanished.
+/// each key as a [`Msg::Key`]. Forwards `Press` and `Repeat` events; drops
+/// `Release` so a held key doesn't insert twice on key-up. The previous
+/// "Release-on-space" carve-out was removed because it caused a
+/// double-insertion on terminals that send a normal `Press(' ')` followed by
+/// `Release(' ')` for the same physical keystroke.
 fn spawn_input_reader(tx: mpsc::Sender<Msg>) {
     tokio::task::spawn_blocking(move || {
         loop {
             match event::poll(INPUT_POLL_INTERVAL) {
                 Ok(true) => match event::read() {
-                    Ok(Event::Key(key))
-                        if key.kind == KeyEventKind::Press
-                            || key.kind == KeyEventKind::Repeat
-                            || (key.kind == KeyEventKind::Release
-                                && matches!(key.code, KeyCode::Char(' '))) =>
-                    {
+                    Ok(Event::Key(key)) if key.kind != KeyEventKind::Release => {
                         if tx.blocking_send(Msg::Key(key)).is_err() {
                             break; // loop gone
                         }
                     }
-                    Ok(_) => {} // resize, mouse, focus, paste, other release: ignored
+                    Ok(_) => {} // resize, mouse, focus, paste, release: ignored
                     Err(_) => break,
                 },
                 // Timed out with no event: stop if the loop has shut down.

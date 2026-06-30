@@ -104,10 +104,9 @@ pub fn update(app: &mut App, msg: Msg) -> Cmd {
 /// must stay in sync with tui-textarea's conversion; upgrade path is deleting
 /// it once tui-textarea publishes a crossterm-0.29 release.
 ///
-/// The input reader upstream (`runtime::mod`) only forwards `Press`,
-/// `Repeat`, and `Release`-on-space; everything else is dropped there, so
-/// this fn does not need to filter on `kind` — a `Release` arriving here
-/// for any other key would have been dropped upstream.
+/// The input reader upstream (`runtime::mod`) only forwards `Press` and
+/// `Repeat` events; `Release` is dropped there, so this fn never sees one
+/// and does not need to filter on `kind`.
 pub(super) fn key_to_input(key: KeyEvent) -> Input {
     let code = match key.code {
         KeyCode::Char(c) => Key::Char(c),

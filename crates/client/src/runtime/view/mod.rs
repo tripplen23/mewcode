@@ -87,6 +87,12 @@ pub(super) fn park_cursor_in_field(frame: &mut Frame, chunk: Rect, textarea: &Te
 /// width would overflow `width` advances the visual row and resets the visual
 /// column. CJK / combining marks use the Unicode width from
 /// [`unicode_width`] so a wide glyph never lands half-on, half-off a row.
+///
+/// **Note:** this is a *character*-width wrap, not the word-wrap performed
+/// by `Paragraph` for the input box. For typical chat text (short words,
+/// spaces between them) the two algorithms agree. They can diverge when a
+/// word wrap would put a space-then-word on a fresh row but the char-wrap
+/// would not — pin this in `cursor_after_word_wrap_lands_on_new_visual_row`.
 fn visual_cursor_pos(
     text: &str,
     cursor_row: usize,

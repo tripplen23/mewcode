@@ -18,7 +18,9 @@ use super::tool_card::{
 
 /// Maximum height (rows) the input field may grow to. Wrapped text beyond
 /// this still wraps, but the input box stops expanding so the transcript
-/// can't be swallowed.
+/// can't be swallowed. Note: text that wraps past this height is clipped
+/// at the bottom of the input box (the input `Paragraph` has no internal
+/// scroll); the user must backspace or clear the input to see it.
 const MAX_INPUT_HEIGHT: u16 = 10;
 
 /// Session: scrollable transcript, input bar, status bar, plus overlays.

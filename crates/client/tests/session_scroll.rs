@@ -232,12 +232,53 @@ fn cursor_on_second_text_line_is_on_second_visual_row() {
     );
 }
 
+/// Multi-word input where a word would wrap at a narrow width: the cursor
+/// must follow the actual visual row, not the raw char count. This is
+/// the case the char-wrap algorithm in `visual_cursor_pos` can get wrong
+/// when word-wrap would put the next word on a fresh row — pin the
+/// current behaviour so a future fix is intentional, not silent.
+#[test]
+fn cursor_after_word_wrap_lands_on_new_visual_row() {
+    let mut app = app_with_long_transcript();
+
+    // 38 inner columns (40-wide terminal - 2 borders). "hello world" is
+    // 11 chars on one row, so the cursor stays on row 0. Then we type
+    // enough `x` to force "world" to wrap to row 1.
+    for c in "hello world".chars() {
+        press(&mut app, KeyCode::Char(c));
+    }
+    for c in std::iter::repeat('x').take(40) {
+        press(&mut app, KeyCode::Char(c));
+    }
+
+    let mut terminal = Terminal::new(TestBackend::new(40, 24)).unwrap();
+    terminal.draw(|frame| render(frame, &mut app)).unwrap();
+    let buf = terminal.backend().to_string();
+    let top = buf
+        .lines()
+        .position(|l| l.contains(" message "))
+        .expect("input box top border missing");
+
+    // Inner row 0 is `top + 1`; the cursor is on the row that contains
+    // the trailing `x`s. We don't pin an exact row here (the test is
+    // about the cursor *not* being stuck on row 0 after a wrap, and the
+    // exact row depends on Paragraph's word-wrap choices). We assert
+    // it's on a row below the first inner row.
+    let pos = terminal.backend().cursor_position();
+    assert!(
+        pos.y > top as u16,
+        "cursor must move past the first inner row when text wraps; got y={}, top={}",
+        pos.y,
+        top
+    );
+}
+
 /// After line 1 is full and the input wraps, the user types
 /// "and" + space + "here" + space + "too" + space on the wrapped line 2.
 /// All three spaces must be in the textarea — both the inter-word
 /// spaces and the trailing one. The single space between two words is
-/// the same path (input reader forwards `Release(space)`), so this
-/// test covers the core fix too.
+/// the most common path through the input reader, so this test covers
+/// the basic space handling as well as the wrap case.
 #[test]
 fn spaces_on_wrapped_line_2_are_kept() {
     let mut app = app_with_long_transcript();

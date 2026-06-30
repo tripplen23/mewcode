@@ -275,6 +275,14 @@ fn q_no_longer_quits_from_session() {
         !matches!(cmd, Cmd::Quit),
         "typing a bare `q` must not produce Cmd::Quit"
     );
+    // The character must be preserved in the composer, not silently
+    // swallowed — that's the original UX break this fix prevents.
+    let s = sess(&app);
+    assert_eq!(
+        s.input.lines().join("\n"),
+        "q",
+        "bare `q` must be inserted into the composer"
+    );
 }
 
 /// The text command `quit` (case-insensitive, exact match) is the new
