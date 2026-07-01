@@ -17,11 +17,7 @@ use super::key_to_input;
 /// lifted into the model in `Msg::SessionCreated`, which then auto-fires
 /// the chat that started the create.
 ///
-/// Quitting: the previous `q`-key shortcut was removed because the
-/// letter shows up in real text (Vietnamese, English). The replacement
-/// is a text command — typing `quit` in the input and pressing Enter
-/// sends `Cmd::Quit`, which the main loop turns into a clean exit. See
-/// `on_session_submit`.
+/// Quitting: Typing `quit` in the input and pressing Enter sends `Cmd::Quit`
 pub(super) fn on_session_key(
     s: &mut SessionState,
     toast: &mut Option<Toast>,
@@ -90,10 +86,7 @@ pub(super) fn on_session_submit(s: &mut SessionState, toast: &mut Option<Toast>)
         return Cmd::None;
     }
 
-    // Text-based quit. Replaces the old single-key `q` shortcut, which
-    // kept eating real text (Vietnamese `q` is everywhere). Case-
-    // insensitive, exact match — "I want to quit" or "quit now" go to
-    // the LLM as a normal message; only a bare `quit` exits.
+    // Text-based quit.
     if trimmed.eq_ignore_ascii_case(QUIT_COMMAND) {
         s.input = TextArea::default();
         return Cmd::Quit;

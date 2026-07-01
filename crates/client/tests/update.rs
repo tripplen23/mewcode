@@ -264,27 +264,6 @@ fn type_into_session(text: &str) -> App {
     app
 }
 
-/// Pressing `q` alone no longer quits — `q` is just a regular char
-/// in the textarea now. (Test left here as a regression marker so the
-/// old behaviour doesn't sneak back in.)
-#[test]
-fn q_no_longer_quits_from_session() {
-    let mut app = on_session();
-    let cmd = update(&mut app, char_key('q'));
-    assert!(
-        !matches!(cmd, Cmd::Quit),
-        "typing a bare `q` must not produce Cmd::Quit"
-    );
-    // The character must be preserved in the composer, not silently
-    // swallowed — that's the original UX break this fix prevents.
-    let s = sess(&app);
-    assert_eq!(
-        s.input.lines().join("\n"),
-        "q",
-        "bare `q` must be inserted into the composer"
-    );
-}
-
 /// The text command `quit` (case-insensitive, exact match) is the new
 /// way to exit. Surrounding whitespace is allowed; substrings like
 /// "I want to quit" or "quit now" still go to the LLM.

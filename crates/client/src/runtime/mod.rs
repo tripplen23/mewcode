@@ -153,11 +153,7 @@ pub async fn run(config: ClientConfig) -> Result<()> {
 }
 
 /// Spawn the blocking input reader: it polls crossterm for events and forwards
-/// each key as a [`Msg::Key`]. Forwards `Press` and `Repeat` events; drops
-/// `Release` so a held key doesn't insert twice on key-up. The previous
-/// "Release-on-space" carve-out was removed because it caused a
-/// double-insertion on terminals that send a normal `Press(' ')` followed by
-/// `Release(' ')` for the same physical keystroke.
+/// each key as a [`Msg::Key`].
 fn spawn_input_reader(tx: mpsc::Sender<Msg>) {
     tokio::task::spawn_blocking(move || {
         loop {
@@ -168,7 +164,7 @@ fn spawn_input_reader(tx: mpsc::Sender<Msg>) {
                             break; // loop gone
                         }
                     }
-                    Ok(_) => {} // resize, mouse, focus, paste, release: ignored
+                    Ok(_) => {} // resize, mouse, focus, paste, repeat, release: ignored
                     Err(_) => break,
                 },
                 // Timed out with no event: stop if the loop has shut down.
