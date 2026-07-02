@@ -143,7 +143,7 @@ pub async fn run(config: ClientConfig) -> Result<()> {
         let Some(msg) = rx.recv().await else { break };
 
         let cmd = update(&mut app, msg);
-        if app.should_quit {
+        if matches!(cmd, Cmd::Quit) {
             break;
         }
         dispatch(cmd, &api, &tx);
@@ -153,13 +153,13 @@ pub async fn run(config: ClientConfig) -> Result<()> {
 }
 
 /// Spawn the blocking input reader: it polls crossterm for events and forwards
-/// each key press as a [`Msg::Key`].
+/// each key as a [`Msg::Key`].
 fn spawn_input_reader(tx: mpsc::Sender<Msg>) {
     tokio::task::spawn_blocking(move || {
         loop {
             match event::poll(INPUT_POLL_INTERVAL) {
                 Ok(true) => match event::read() {
-                    Ok(Event::Key(key)) if key.kind == KeyEventKind::Press => {
+                    Ok(Event::Key(key)) if key.kind != KeyEventKind::Release => {
                         if tx.blocking_send(Msg::Key(key)).is_err() {
                             break; // loop gone
                         }
@@ -197,7 +197,7 @@ fn spawn_ticker(tx: mpsc::Sender<Msg>) {
 /// back into the loop as a follow-up [`Msg`]. `update` stays pure; all I/O lives here.
 fn dispatch(cmd: Cmd, api: &ApiClient, tx: &mpsc::Sender<Msg>) {
     match cmd {
-        Cmd::None => {}
+        Cmd::None | Cmd::Quit => {}
         Cmd::CreateSession(req) => {
             let api = api.clone();
             let tx = tx.clone();

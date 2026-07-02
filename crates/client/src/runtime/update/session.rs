@@ -7,13 +7,19 @@ use mewcode_protocol::{Message, MessagePart, Mode};
 
 use crate::net::CreateSessionRequest;
 
-use super::super::model::{Cmd, Overlay, SessionState, StreamingState, Toast};
+use super::super::model::{Cmd, Overlay, QUIT_COMMAND, SessionState, StreamingState, Toast};
 use super::key_to_input;
 
 /// Session screen: input editing, submit, slash commands.
+///
+/// The TUI launches here with `session == None`. The first non-slash
+/// message the user sends triggers a `POST /sessions`; the response is
+/// lifted into the model in `Msg::SessionCreated`, which then auto-fires
+/// the chat that started the create.
+///
+/// Quitting: Typing `quit` in the input and pressing Enter sends `Cmd::Quit`
 pub(super) fn on_session_key(
     s: &mut SessionState,
-    app_quit: &mut bool,
     toast: &mut Option<Toast>,
     key: KeyEvent,
 ) -> Cmd {
@@ -23,11 +29,6 @@ pub(super) fn on_session_key(
         if s.overlay != Overlay::None {
             s.overlay = Overlay::None;
         }
-        return Cmd::None;
-    }
-
-    if key.code == KeyCode::Char('q') && s.overlay == Overlay::None && !s.creating {
-        *app_quit = true;
         return Cmd::None;
     }
 
@@ -74,15 +75,21 @@ fn scroll_by(s: &mut SessionState, delta: i32) {
     s.follow = next >= s.max_scroll;
 }
 
-/// Handle `Enter` in the Session input bar: slash command, or — if no
-/// session exists yet — create one with the typed text as the seed, or
-/// send the chat into the existing session.
+/// Handle `Enter` in the Session input bar: the `quit` text command,
+/// slash commands, or — if no session exists yet — create one with the
+/// typed text as the seed, or send the chat into the existing session.
 pub(super) fn on_session_submit(s: &mut SessionState, toast: &mut Option<Toast>) -> Cmd {
     let text = s.input.lines().join("\n");
     let trimmed = text.trim();
 
     if trimmed.is_empty() {
         return Cmd::None;
+    }
+
+    // Text-based quit.
+    if trimmed.eq_ignore_ascii_case(QUIT_COMMAND) {
+        s.input = TextArea::default();
+        return Cmd::Quit;
     }
 
     // one turn at a time — refuse to start another while a turn is
